@@ -2,26 +2,4 @@
 # 포트 쓸 때 3307에 올려서 쓰거나, gitignore에 해당 부분 추가해서 로컬 세팅으로 써야 개발할 때 확인 용이함
 
 ## 패키지 분리 구조
-src/main/java/com/readour/
-├─ common/
-│  ├─ config/
-│  ├─ exception/
-│  ├─ dto/
-│  │  ├─ ApiResponse.java        # 공용 응답 래퍼
-│  │  └─ PageResponse.java       # 공용 페이징 응답
-│  ├─ enums/
-│  └─ util/
-├─ chat/
-│  ├─ api/
-│  │  ├─ controller/
-│  │  └─ dto/                    # Chat 전용 DTO들
-│  ├─ service/
-│  ├─ repository/                # Spring Data JPA 바로 사용
-│  └─ entity/
-└─ community/
-   ├─ api/
-   │  ├─ controller/
-   │  └─ dto/                    # Community 전용 DTO들
-   ├─ service/
-   ├─ repository/                # Spring Data JPA
-   └─ entity/
+<img width="527" height="561" alt="스크린샷 2025-10-21 오후 1 34 14" src="https://github.com/user-attachments/assets/3620af68-a8c7-4123-9dbe-6a2ffbc52b6a" />
