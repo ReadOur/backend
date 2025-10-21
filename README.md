@@ -2,6 +2,6 @@
 # 포트 쓸 때 3307에 올려서 쓰거나, gitignore에 해당 부분 추가해서 로컬 세팅으로 써야 개발할 때 확인 용이함
 
 ## 패키지 분리 구조
-<img width="527" height="561" alt="스크린샷 2025-10-21 오후 1 34 14" src="https://github.com/user-attachments/assets/3620af68-a8c7-4123-9dbe-6a2ffbc52b6a" />
+<img width="586" height="505" alt="스크린샷 2025-10-21 오후 2 45 32" src="https://github.com/user-attachments/assets/060f6bd7-ba32-4ce1-8e5f-b04b3115e2d4" />
 
 common 페이지에 entity 폴더 추가 예정, 공통 엔티티(ex. user)는 함께 쓰는 방향으로
