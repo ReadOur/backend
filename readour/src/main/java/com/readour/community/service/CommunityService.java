@@ -30,8 +30,9 @@ public class CommunityService {
         List<Post> posts = postPage.getContent();
         List<PostSummaryDto> summaryDtos = posts.stream()
                 .map(post -> {
-                    long likeCount = postLikeRepository.countByIdPostId(post.getPostId());
-                    return PostSummaryDto.fromEntity(post, likeCount);
+                    Long likeCount = postLikeRepository.countByIdPostId(post.getPostId());
+                    Long commentCount = commentRepository.countByPostIdAndIsDeletedFalse(post.getPostId());
+                    return PostSummaryDto.fromEntity(post, likeCount, commentCount);
                 })
                 .collect(Collectors.toList());
 
@@ -52,7 +53,7 @@ public class CommunityService {
         post.setIsDeleted(false);
 
         Post savedPost = postRepository.save(post);
-        return PostResponseDto.fromEntity(savedPost, List.of(), 0L);
+        return PostResponseDto.fromEntity(savedPost, List.of(), 0L, 0L);
     }
 
     @Transactional
@@ -64,12 +65,14 @@ public class CommunityService {
 
         List<CommentResponseDto> comments = commentRepository.findAllByPostId(postId)
                 .stream()
+                .filter(comment -> !comment.getIsDeleted())
                 .map(CommentResponseDto::fromEntity)
                 .collect(Collectors.toList());
 
         Long likeCount = postLikeRepository.countByIdPostId(postId);
+        Long commentCount = commentRepository.countByPostIdAndIsDeletedFalse(postId);
 
-        return PostResponseDto.fromEntity(post, comments, likeCount);
+        return PostResponseDto.fromEntity(post, comments, likeCount, commentCount);
     }
 
     @Transactional
@@ -116,12 +119,14 @@ public class CommunityService {
 
         List<CommentResponseDto> comments = commentRepository.findAllByPostId(postId)
                 .stream()
+                .filter(comment -> !comment.getIsDeleted())
                 .map(CommentResponseDto::fromEntity)
                 .collect(Collectors.toList());
 
         Long likeCount = postLikeRepository.countByIdPostId(postId);
+        Long commentCount = commentRepository.countByPostIdAndIsDeletedFalse(postId);
 
-        return PostResponseDto.fromEntity(updatedPost, comments, likeCount);
+        return PostResponseDto.fromEntity(updatedPost, comments, likeCount, commentCount);
     }
 
     @Transactional

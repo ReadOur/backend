@@ -16,10 +16,11 @@ public class PostSummaryDto {
     private String authorNickname; // Placeholder for now
     private Integer hit;
     private Long likeCount;
+    private Long commentCount;
     private LocalDateTime createdAt;
     // Add comment count or like count later if needed
 
-    public static PostSummaryDto fromEntity(Post post, Long likeCount) {
+    public static PostSummaryDto fromEntity(Post post, Long likeCount, Long commentCount) {
         return PostSummaryDto.builder()
                 .postId(post.getPostId())
                 .title(post.getTitle())
@@ -27,6 +28,7 @@ public class PostSummaryDto {
                 .authorNickname("temp_user") // TODO: Fetch actual nickname
                 .hit(post.getHit())
                 .likeCount(likeCount)
+                .commentCount(commentCount)
                 .createdAt(post.getCreatedAt())
                 .build();
     }
