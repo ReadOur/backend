@@ -16,10 +16,11 @@ public class ChatMessage {
     private Long roomId;
     private Long senderId;
     private String type;
-    @JdbcTypeCode(SqlTypes.JSON)
+
     @Column(columnDefinition = "json")
     private String body;
     private Long replyToMsgId;
     private LocalDateTime createdAt;
     private LocalDateTime deletedAt;
+
 }
