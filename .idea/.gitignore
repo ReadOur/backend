@@ -6,3 +6,8 @@
 # Datasource local storage ignored files
 /dataSources/
 /dataSources.local.xml
+# IntelliJ IDEA  files
+.idea/
+*.iml
+# Sensitive configuration
+readour/src/main/resources/application.properties
