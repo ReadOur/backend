@@ -1,5 +1,6 @@
 package com.readour.chat.entity;
 
+import com.readour.common.enums.Role;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.*;
@@ -10,7 +11,7 @@ import java.time.*;
 public class ChatRoomMember {
     @Id private Long roomId;
     @Id private Long userId;
-    private String role;
+    private Role role;
     private LocalDateTime joinedAt;
     private LocalDateTime mutedUntil;
     private Long lastReadMsgId;

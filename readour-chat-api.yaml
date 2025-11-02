@@ -1,0 +1,587 @@
+openapi: 3.0.3
+info:
+  title: ReadOur Chat & AI API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8080
+security:
+  - bearerAuth: []
+paths:
+  /chat/rooms/{roomId}/messages:
+    post:
+      summary: 메시지 전송
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MessageCreateReq' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Message' }
+    get:
+      summary: 메시지 타임라인 조회
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: before
+          required: false
+          schema: { type: string, format: date-time }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, default: 50, maximum: 100 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MessageList' }
+
+  /chat/rooms/{roomId}/leave:
+    post:
+      summary: 방 나가기
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema: { type: integer }
+      responses:
+        '204': { description: No Content }
+
+  /chat/messages/{msgId}/hide:
+    post:
+      summary: 메시지 가리기
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: msgId
+          required: true
+          schema: { type: integer }
+      responses:
+        '204': { description: No Content }
+    delete:
+      summary: 메시지 가리기 해제
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: msgId
+          required: true
+          schema: { type: integer }
+      responses:
+        '204': { description: No Content }
+
+  /chat/rooms/{roomId}/announcements:
+    post:
+      summary: 공지 생성
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AnnouncementCreateReq' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Announcement' }
+    get:
+      summary: 공지 목록 조회
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema: { type: integer }
+        - in: query
+          name: before
+          required: false
+          schema: { type: string, format: date-time }
+        - in: query
+          name: limit
+          required: false
+          schema: { type: integer, default: 20, maximum: 50 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AnnouncementList' }
+
+  /chat/rooms/{roomId}/polls:
+    post:
+      summary: 투표 생성
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PollCreateReq' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PollCreateRes' }
+
+  /chat/polls/{pollMsgId}/votes:
+    post:
+      summary: 투표 참여
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: pollMsgId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PollVoteReq' }
+      responses:
+        '204': { description: No Content }
+
+  /chat/polls/{pollMsgId}/result:
+    get:
+      summary: 투표 결과 조회
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: pollMsgId
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PollResult' }
+
+  /chat/rooms/my:
+    get:
+      summary: 내 채팅방 목록
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: query
+          required: false
+          schema: { type: string }
+        - in: query
+          name: page
+          required: false
+          schema: { type: integer, default: 0 }
+        - in: query
+          name: size
+          required: false
+          schema: { type: integer, default: 20, maximum: 50 }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoomListPage' }
+
+  /chat/rooms/{roomId}/read-pointer:
+    patch:
+      summary: 읽음 포인터 갱신
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReadPointerUpdateReq' }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReadPointerUpdateRes' }
+
+  /chat/rooms/{roomId}/pin:
+    post:
+      summary: 방 고정
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema: { type: integer }
+      responses:
+        '204': { description: No Content }
+    delete:
+      summary: 방 고정 해제
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: roomId
+          required: true
+          schema: { type: integer }
+      responses:
+        '204': { description: No Content }
+
+  /chat/rooms/pins/reorder:
+    patch:
+      summary: 고정 순서 변경
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PinReorderReq' }
+      responses:
+        '204': { description: No Content }
+
+  /chat/rooms:
+    post:
+      summary: 채팅방 개설
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoomCreateReq' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RoomCreateRes' }
+
+  /ai/jobs:
+    post:
+      summary: AI 잡 생성(요약/질의)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/AIJobCreateSummarizeReq'
+                - $ref: '#/components/schemas/AIJobCreateAskReq'
+      responses:
+        '202':
+          description: Accepted
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIJobAccepted' }
+
+  /ai/jobs/{jobId}:
+    get:
+      summary: AI 잡 조회
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIJob' }
+
+  /ai/results/{resultId}/share:
+    post:
+      summary: AI 결과 공유(재게시)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: resultId
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AIResultShareReq' }
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/AIResultShareRes' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    MessageCreateReq:
+      type: object
+      required: [type, body]
+      properties:
+        clientRequestId: { type: string, nullable: true }
+        type: { type: string, enum: [TEXT, SYSTEM, POLL], default: TEXT }
+        body:
+          type: object
+          example: { text: "안녕하세요" }
+        replyToMsgId: { type: integer, nullable: true }
+
+    Message:
+      type: object
+      properties:
+        id: { type: integer }
+        roomId: { type: integer }
+        senderId: { type: integer }
+        type: { type: string }
+        body: { type: object }
+        replyToMsgId: { type: integer, nullable: true }
+        createdAt: { type: string, format: date-time }
+        deletedAt: { type: string, format: date-time, nullable: true }
+
+    MessageList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Message' }
+        paging:
+          type: object
+          properties:
+            nextBefore: { type: string, format: date-time, nullable: true }
+
+    AnnouncementCreateReq:
+      type: object
+      required: [title, content]
+      properties:
+        title: { type: string, maxLength: 200 }
+        content: { type: string }
+
+    Announcement:
+      type: object
+      properties:
+        id: { type: integer }
+        roomId: { type: integer }
+        authorId: { type: integer }
+        title: { type: string }
+        content: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    AnnouncementList:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Announcement' }
+        paging:
+          type: object
+          properties:
+            nextBefore: { type: string, format: date-time, nullable: true }
+
+    PollCreateReq:
+      type: object
+      required: [title, options]
+      properties:
+        title: { type: string, maxLength: 200 }
+        options:
+          type: array
+          items: { type: string }
+          minItems: 2
+        multiSelect: { type: boolean, default: false }
+
+    PollCreateRes:
+      type: object
+      properties:
+        pollMsgId: { type: integer }
+
+    PollVoteReq:
+      type: object
+      required: [selectedOptions]
+      properties:
+        selectedOptions:
+          type: array
+          items: { type: integer }
+
+    PollResult:
+      type: object
+      properties:
+        pollMsgId: { type: integer }
+        title: { type: string }
+        multiSelect: { type: boolean }
+        counts:
+          type: array
+          items:
+            type: object
+            properties:
+              optionIndex: { type: integer }
+              label: { type: string }
+              count: { type: integer }
+
+    RoomListItem:
+      type: object
+      properties:
+        roomId: { type: integer }
+        name: { type: string }
+        lastMsg:
+          type: object
+          properties:
+            id: { type: integer }
+            preview: { type: string }
+            createdAt: { type: string, format: date-time }
+        unreadCount: { type: integer }
+        updatedAt: { type: string, format: date-time }
+        pinned: { type: boolean }
+        pinOrder: { type: integer, nullable: true }
+
+    RoomListPage:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/RoomListItem' }
+        page:
+          type: object
+          properties:
+            number: { type: integer }
+            size: { type: integer }
+            hasNext: { type: boolean }
+
+    ReadPointerUpdateReq:
+      type: object
+      required: [lastReadMsgId]
+      properties:
+        lastReadMsgId: { type: integer }
+
+    ReadPointerUpdateRes:
+      type: object
+      properties:
+        roomId: { type: integer }
+        lastReadMsgId: { type: integer }
+        unreadCount: { type: integer }
+
+    PinReorderReq:
+      type: object
+      required: [orders]
+      properties:
+        orders:
+          type: array
+          items:
+            type: object
+            required: [roomId, pinOrder]
+            properties:
+              roomId: { type: integer }
+              pinOrder: { type: integer }
+
+    RoomCreateReq:
+      type: object
+      required: [scope, name, memberIds]
+      properties:
+        scope: { type: string, enum: [ONE_TO_ONE, PUBLIC] }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        memberIds:
+          type: array
+          items: { type: integer }
+          minItems: 1
+
+    RoomCreateRes:
+      type: object
+      properties:
+        id: { type: integer }
+        scope: { type: string }
+        name: { type: string }
+        description: { type: string, nullable: true }
+        createdBy: { type: integer }
+        createdAt: { type: string, format: date-time }
+
+    AIJobCreateSummarizeReq:
+      type: object
+      required: [roomId, action, taskType, scope]
+      properties:
+        roomId: { type: integer }
+        action: { type: string, enum: [SUMMARIZE], default: SUMMARIZE }
+        taskType: { type: string, enum: [SUMMARIZE], default: SUMMARIZE }
+        scope:
+          type: object
+          required: [type, n]
+          properties:
+            type: { type: string, enum: [LAST_N] }
+            n: { type: integer, minimum: 10, maximum: 200, default: 50 }
+        options:
+          type: object
+          properties:
+            includeQuotes: { type: boolean, default: true }
+            style: { type: string, enum: [bullet-5, bullet-7, paragraph], default: bullet-5 }
+
+    AIJobCreateAskReq:
+      type: object
+      required: [roomId, action, taskType, question, scope]
+      properties:
+        roomId: { type: integer }
+        action: { type: string, enum: [ASK], default: ASK }
+        taskType: { type: string, enum: [ASK], default: ASK }
+        question: { type: string }
+        scope:
+          type: object
+          required: [type, n]
+          properties:
+            type: { type: string, enum: [LAST_N] }
+            n: { type: integer, default: 50 }
+
+    AIJobAccepted:
+      type: object
+      properties:
+        jobId: { type: integer }
+        status: { type: string, enum: [PENDING] }
+
+    AIJob:
+      type: object
+      properties:
+        id: { type: integer }
+        roomId: { type: integer }
+        action: { type: string }
+        taskType: { type: string }
+        status: { type: string, enum: [PENDING, DONE, FAILED] }
+        startedAt: { type: string, format: date-time, nullable: true }
+        endedAt: { type: string, format: date-time, nullable: true }
+        latencyMs: { type: integer, nullable: true }
+        error: { type: string, nullable: true }
+
+    AIResultShareReq:
+      type: object
+      required: [roomId]
+      properties:
+        roomId: { type: integer }
+        messageLink: { type: boolean, default: true }
+
+    AIResultShareRes:
+      type: object
+      properties:
+        sharedMsgId: { type: integer }
+        roomId: { type: integer }
+        createdAt: { type: string, format: date-time }
