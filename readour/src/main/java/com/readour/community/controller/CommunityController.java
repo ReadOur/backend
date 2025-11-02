@@ -130,11 +130,7 @@ public class CommunityController {
     })
     @GetMapping("/posts")
     public ResponseEntity<ApiResponseDto<Page<PostSummaryDto>>> getPostList(
-            @PageableDefault(
-                    size = 10,
-                    sort = "createdAt",
-                    direction = Sort.Direction.DESC
-            ) Pageable pageable,
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
             @RequestParam(required = false) PostCategory category
     ) {
         Long currentUserId = 1L; // TODO: Get authenticated user Id. 비회원은 null
