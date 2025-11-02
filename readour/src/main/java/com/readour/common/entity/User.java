@@ -15,9 +15,11 @@ public class User {
 
     private String email;
     private String password;
+    @Enumerated(EnumType.STRING)
     private Gender gender;
     private LocalDate birthDate;
     private String nickname;
+    @Enumerated(EnumType.STRING)
     private UserStatus status;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

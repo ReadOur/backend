@@ -1,6 +1,8 @@
 package com.readour.community.dto;
 
+import com.readour.common.entity.User;
 import com.readour.community.entity.Post;
+import com.readour.community.enums.PostCategory;
 import lombok.*;
 import java.time.LocalDateTime;
 
@@ -12,23 +14,26 @@ import java.time.LocalDateTime;
 public class PostSummaryDto {
     private Long postId;
     private String title;
-    private String category;
-    private String authorNickname; // Placeholder for now
+    private PostCategory category;
+    private String authorNickname;
     private Integer hit;
     private Long likeCount;
     private Long commentCount;
+    private Boolean isLiked;
     private LocalDateTime createdAt;
-    // Add comment count or like count later if needed
 
-    public static PostSummaryDto fromEntity(Post post, Long likeCount, Long commentCount) {
+    public static PostSummaryDto fromEntity(Post post, Long likeCount, Long commentCount, Boolean isLiked) {
+        User author = post.getUser();
+
         return PostSummaryDto.builder()
                 .postId(post.getPostId())
                 .title(post.getTitle())
                 .category(post.getCategory())
-                .authorNickname("temp_user") // TODO: Fetch actual nickname
+                .authorNickname(author != null ? author.getNickname() : "탈퇴한 유저")
                 .hit(post.getHit())
                 .likeCount(likeCount)
                 .commentCount(commentCount)
+                .isLiked(isLiked)
                 .createdAt(post.getCreatedAt())
                 .build();
     }
