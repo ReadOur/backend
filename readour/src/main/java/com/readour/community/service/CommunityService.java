@@ -213,6 +213,14 @@ public class CommunityService {
         post.updateStatus(true);
         postRepository.save(post);
         log.debug("Post soft-deleted with id: {}", postId);
+
+        List<Comment> comments = commentRepository.findAllByPostId(postId);
+        comments.forEach(comment -> comment.updateStatus(true));
+
+        if (!comments.isEmpty()) {
+            commentRepository.saveAll(comments);
+            log.debug("Soft-deleted {} associated comments for post id: {}", comments.size(), postId);
+        }
     }
 
     @Transactional
@@ -237,7 +245,7 @@ public class CommunityService {
 
     @Transactional
     public CommentResponseDto updateComment(Long commentId, CommentUpdateRequestDto requestDto, Long userId) {
-        Comment comment = commentRepository.findById(commentId)
+        Comment comment = commentRepository.findByCommentIdAndIsDeletedFalse(commentId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Comment not found with id: " + commentId));
 
         if (!comment.getUserId().equals(userId)) {
@@ -252,7 +260,7 @@ public class CommunityService {
 
     @Transactional
     public void deleteComment(Long commentId, Long userId) {
-        Comment comment = commentRepository.findById(commentId)
+        Comment comment = commentRepository.findByCommentIdAndIsDeletedFalse(commentId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Comment not found with id: " + commentId));
 
         if (!comment.getUserId().equals(userId)) {
