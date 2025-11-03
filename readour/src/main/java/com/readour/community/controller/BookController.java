@@ -4,15 +4,19 @@ import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.exception.CustomException;
-import com.readour.community.dto.BookSummaryDto;
 import com.readour.common.entity.Book;
+import com.readour.community.dto.BookResponseDto;
+import com.readour.community.dto.BookSummaryDto;
+import com.readour.community.dto.BookSyncRequestDto;
 import com.readour.community.service.BookService;
+import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.RequiredArgsConstructor;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
@@ -38,7 +42,7 @@ public class BookController {
     @GetMapping("/search")
     public ResponseEntity<ApiResponseDto<Page<BookSummaryDto>>> searchBooks(
             @RequestParam String keyword,
-            @PageableDefault(size = 10) Pageable pageable
+            @ParameterObject Pageable pageable
     ) {
         Page<BookSummaryDto> bookPage = bookService.searchBooksFromApi(keyword, pageable);
         return ResponseEntity.ok(ApiResponseDto.<Page<BookSummaryDto>>builder()
@@ -60,11 +64,12 @@ public class BookController {
             @ApiResponse(responseCode = "404", description = "API에서도 도서 정보를 찾을 수 없음",
                     content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
-
-
     @PostMapping("/sync")
-    public ResponseEntity<ApiResponseDto<Book>> syncBook(@RequestBody Map<String, String> payload) {
-        String isbn = payload.get("isbn");
+    public ResponseEntity<ApiResponseDto<BookResponseDto>> syncBook(
+            @Valid @RequestBody BookSyncRequestDto payload
+    ) {
+        String isbn = payload.getIsbn();
+
         if (isbn == null || isbn.isBlank()) {
             throw new CustomException(ErrorCode.BAD_REQUEST, "ISBN is required");
         }
@@ -72,20 +77,21 @@ public class BookController {
         // DB에 이미 있는지 확인 (findOrCreateBookByIsbn이 이 로직을 포함함)
         boolean existsInDb = bookService.isBookInDb(isbn);
 
-        Book book = bookService.findOrCreateBookByIsbn(isbn);
+        Book bookEntity = bookService.findOrCreateBookByIsbn(isbn);
+        BookResponseDto responseDto = BookResponseDto.fromEntity(bookEntity);
 
         if (existsInDb) {
             // 이미 DB에 있었던 경우
-            return ResponseEntity.ok(ApiResponseDto.<Book>builder()
+            return ResponseEntity.ok(ApiResponseDto.<BookResponseDto>builder()
                     .status(HttpStatus.OK.value())
-                    .body(book)
+                    .body(responseDto)
                     .message("DB에서 도서 정보 조회 성공")
                     .build());
         } else {
             // API를 통해 새로 생성된 경우
-            return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponseDto.<Book>builder()
+            return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponseDto.<BookResponseDto>builder()
                     .status(HttpStatus.CREATED.value())
-                    .body(book)
+                    .body(responseDto)
                     .message("API에서 도서 정보를 가져와 DB에 저장 성공")
                     .build());
         }

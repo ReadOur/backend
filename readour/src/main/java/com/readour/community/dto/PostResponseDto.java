@@ -19,8 +19,8 @@ public class PostResponseDto {
     private String title;
     private String content;
     private PostCategory category;
-    private String authorNickname;
     private Long authorId;
+    private String authorNickname;
     private Integer hit;
     private Long likeCount;
     private Long commentCount;
