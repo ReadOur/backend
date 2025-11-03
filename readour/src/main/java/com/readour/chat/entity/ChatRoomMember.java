@@ -11,6 +11,9 @@ import java.time.*;
 public class ChatRoomMember {
     @Id private Long roomId;
     @Id private Long userId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", length = 20, nullable = false)
     private Role role;
     private LocalDateTime joinedAt;
     private LocalDateTime mutedUntil;
