@@ -122,7 +122,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     /*@ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Object> handleAccessDenied(AccessDeniedException ex, WebRequest request) {
         return buildErrorResponse(ex, ErrorCode.FORBIDDEN.getDefaultMessage(), ErrorCode.FORBIDDEN.getHttpStatus(), request);
-    }*/
+    }*//*
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<Object> handleDataIntegrityViolation(DataIntegrityViolationException ex, WebRequest request) {
@@ -132,7 +132,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Object> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex, WebRequest request) {
         return buildErrorResponse(ex, ErrorCode.UNPROCESSABLE_ENTITY.getDefaultMessage(), ErrorCode.UNPROCESSABLE_ENTITY.getHttpStatus(), request);
-    }
+    }*//*
 
     @ExceptionHandler(Exception.class)
     @Hidden

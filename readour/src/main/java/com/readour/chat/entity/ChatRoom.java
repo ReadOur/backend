@@ -11,7 +11,9 @@ public class ChatRoom {
     private Long id;
     private String scope;
     private String name;
-    @Lob private String description;
+
+    @Column(length = 500)
+    private String description;
     private Long createdBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

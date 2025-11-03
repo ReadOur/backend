@@ -3,24 +3,44 @@ package com.readour.chat.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.readour.chat.dto.common.MessageDto;
+import com.readour.chat.dto.response.MessageListResponse;
 import com.readour.chat.entity.ChatMessage;
+import com.readour.chat.entity.ChatRoomMember;
+import com.readour.chat.entity.ChatMessageHide;
+import com.readour.chat.repository.ChatMessageHideRepository;
 import com.readour.chat.repository.ChatMessageRepository;
+import com.readour.chat.repository.ChatRoomMemberRepository;
 import com.readour.common.enums.ErrorCode;
+import com.readour.common.enums.Role;
 import com.readour.common.exception.CustomException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
+import org.springframework.data.domain.Sort;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class ChatMessageService {
 
     private static final String TOPIC = "chat-messages";
+    private static final int DEFAULT_LIMIT = 50;
+    private static final int MAX_LIMIT = 100;
 
     private final ChatMessageRepository chatMessageRepository;
+    private final ChatRoomMemberRepository chatRoomMemberRepository;
+    private final ChatMessageHideRepository chatMessageHideRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
 
@@ -44,6 +64,131 @@ public class ChatMessageService {
         kafkaTemplate.send(TOPIC, String.valueOf(response.getRoomId()), serialize(response));
 
         return response;
+    }
+
+    @Transactional
+    public void hideMessage(Long messageId, Long userId) {
+        if (messageId == null || userId == null) {
+            throw new CustomException(ErrorCode.BAD_REQUEST, "messageId와 userId는 필수입니다.");
+        }
+
+        ChatMessage message = chatMessageRepository.findById(messageId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "메시지를 찾을 수 없습니다."));
+
+        ChatRoomMember member = chatRoomMemberRepository.findByRoomIdAndUserIdAndIsActiveTrue(message.getRoomId(), userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.FORBIDDEN, "채팅방에 참여 중이 아닙니다."));
+
+        if (isManagerOrOwner(member)) {
+            if (message.getDeletedAt() == null) {
+                message.setDeletedAt(LocalDateTime.now());
+                chatMessageRepository.save(message);
+            }
+            return;
+        }
+
+        ChatMessageHide hide = chatMessageHideRepository.findByMsgIdAndUserId(messageId, userId)
+                .orElseGet(() -> ChatMessageHide.builder()
+                        .msgId(messageId)
+                        .userId(userId)
+                        .build());
+        hide.setHiddenAt(LocalDateTime.now());
+        hide.setUnhiddenAt(null);
+        chatMessageHideRepository.save(hide);
+    }
+
+    @Transactional
+    public void unhideMessage(Long messageId, Long userId) {
+        if (messageId == null || userId == null) {
+            throw new CustomException(ErrorCode.BAD_REQUEST, "messageId와 userId는 필수입니다.");
+        }
+
+        ChatMessage message = chatMessageRepository.findById(messageId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "메시지를 찾을 수 없습니다."));
+
+        ChatRoomMember member = chatRoomMemberRepository.findByRoomIdAndUserIdAndIsActiveTrue(message.getRoomId(), userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.FORBIDDEN, "채팅방에 참여 중이 아닙니다."));
+
+        if (isManagerOrOwner(member)) {
+            if (message.getDeletedAt() != null) {
+                message.setDeletedAt(null);
+                chatMessageRepository.save(message);
+            }
+            return;
+        }
+
+        chatMessageHideRepository.findByMsgIdAndUserId(messageId, userId)
+                .ifPresent(hide -> {
+                    hide.setUnhiddenAt(LocalDateTime.now());
+                    chatMessageHideRepository.save(hide);
+                });
+    }
+
+    @Transactional(readOnly = true)
+    public MessageListResponse getTimeline(Long roomId, Long userId, LocalDateTime before, Integer limit) {
+        if (roomId == null) {
+            throw new CustomException(ErrorCode.BAD_REQUEST, "roomId는 필수입니다.");
+        }
+        if (userId == null) {
+            throw new CustomException(ErrorCode.BAD_REQUEST, "userId는 필수입니다.");
+        }
+
+        chatRoomMemberRepository.findByRoomIdAndUserIdAndIsActiveTrue(roomId, userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.FORBIDDEN, "채팅방에 참여 중이 아닙니다."));
+
+        int resolvedLimit = limit == null ? DEFAULT_LIMIT : limit;
+        if (resolvedLimit <= 0) {
+            throw new CustomException(ErrorCode.BAD_REQUEST, "limit는 1 이상이어야 합니다.");
+        }
+        if (resolvedLimit > MAX_LIMIT) {
+            throw new CustomException(ErrorCode.BAD_REQUEST, "limit는 100 이하이어야 합니다.");
+        }
+
+        Sort sort = Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id"));
+        Pageable pageable = PageRequest.of(0, resolvedLimit, sort);
+
+        Slice<ChatMessage> slice = before != null
+                ? chatMessageRepository.findByRoomIdAndDeletedAtIsNullAndCreatedAtLessThan(roomId, before, pageable)
+                : chatMessageRepository.findByRoomIdAndDeletedAtIsNull(roomId, pageable);
+
+        List<ChatMessage> entities = slice.getContent();
+        List<Long> messageIds = entities.stream()
+                .map(ChatMessage::getId)
+                .collect(Collectors.toList());
+
+        Set<Long> hiddenMessageIds = messageIds.isEmpty() ? Set.of() : chatMessageHideRepository
+                .findAllByUserIdAndMsgIdInAndUnhiddenAtIsNull(userId, messageIds)
+                .stream()
+                .map(ChatMessageHide::getMsgId)
+                .collect(Collectors.toCollection(HashSet::new));
+
+        List<MessageDto> items = entities.stream()
+                .filter(entity -> !hiddenMessageIds.contains(entity.getId()))
+                .map(MessageDto::fromEntity)
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        if (!items.isEmpty()) {
+            Collections.reverse(items);
+        }
+
+        LocalDateTime nextBefore = (slice.hasNext() && !entities.isEmpty())
+                ? entities.get(entities.size() - 1).getCreatedAt()
+                : null;
+
+        MessageListResponse.Paging paging = MessageListResponse.Paging.builder()
+                .nextBefore(nextBefore)
+                .build();
+
+        return MessageListResponse.builder()
+                .items(items)
+                .paging(paging)
+                .build();
+    }
+
+    private boolean isManagerOrOwner(ChatRoomMember member) {
+        if (member.getRole() == null) {
+            return false;
+        }
+        return member.getRole() == Role.MANAGER || member.getRole() == Role.OWNER;
     }
 
     private String serialize(MessageDto response) {
