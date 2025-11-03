@@ -2,14 +2,14 @@ package com.readour.community.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.readour.community.dto.BookSummaryDto;
+import com.readour.community.dto.LibraryApiDtos;
+import com.readour.community.dto.PopularBookDto;
 import com.readour.common.entity.Book;
 import com.readour.common.entity.User;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.enums.Gender;
 import com.readour.common.exception.CustomException;
-import com.readour.community.dto.BookSummaryDto;
-import com.readour.community.dto.LibraryApiDtos;
-import com.readour.community.dto.PopularBookDto;
 import com.readour.community.repository.BookRepository;
 import com.readour.community.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -59,6 +59,7 @@ public class BookService {
     /**
      * [기존] (외부 API #16)
      * 정보나루 API를 호출하여 도서를 검색합니다. (DB 저장 X)
+     * (Wrapper DTO 사용 O)
      */
     @Transactional(readOnly = true)
     public Page<BookSummaryDto> searchBooksFromApi(String keyword, Pageable pageable) {
@@ -67,7 +68,7 @@ public class BookService {
         URI uri = UriComponentsBuilder
                 .fromUriString(baseUrl + "/srchBooks")
                 .queryParam("authKey", apiKey)
-                .queryParam("keyword", keyword) // "소년이 온다"
+                .queryParam("keyword", keyword)
                 .queryParam("pageNo", pageable.getPageNumber() + 1)
                 .queryParam("pageSize", pageable.getPageSize())
                 .queryParam("format", "json")
@@ -77,19 +78,23 @@ public class BookService {
 
         try {
             String jsonResponse = restTemplate.getForObject(uri, String.class);
-
             log.info("External API Response JSON for keyword [{}]: {}", keyword, jsonResponse);
 
-            LibraryApiDtos.SearchResponse response = objectMapper.readValue(jsonResponse, LibraryApiDtos.SearchResponse.class);
+            // [수정] Wrapper DTO를 사용하여 파싱합니다.
+            LibraryApiDtos.SearchResponseWrapper wrapper = objectMapper.readValue(jsonResponse, LibraryApiDtos.SearchResponseWrapper.class);
 
-            if (response == null || response.getDocs() == null) {
+            if (wrapper == null || wrapper.getResponse() == null || wrapper.getResponse().getDocs() == null) {
                 log.warn("API response is empty or malformed for keyword: {}", keyword);
                 return Page.empty(pageable);
             }
 
+            // Wrapper에서 실제 응답 데이터를 추출합니다.
+            LibraryApiDtos.SearchResponse response = wrapper.getResponse();
+
+            // [수정] .map(Wrapper::getDoc)을 추가하여 중첩된 doc 객체를 꺼냅니다.
             List<BookSummaryDto> bookSummaries = response.getDocs().stream()
-                    .map(LibraryApiDtos.SearchDocWrapper::getDoc)
-                    .map(BookSummaryDto::from)
+                    .map(LibraryApiDtos.SearchDocWrapper::getDoc) // SearchDocWrapper -> SearchDoc
+                    .map(BookSummaryDto::from)                   // SearchDoc -> BookSummaryDto
                     .collect(Collectors.toList());
 
             return new PageImpl<>(bookSummaries, pageable, response.getNumFound());
@@ -131,6 +136,7 @@ public class BookService {
     /**
      * [신규] (요청 3)
      * 사용자 정보(성별, 연령)를 기반으로 인기대출도서 API(#3)를 호출합니다.
+     * (Wrapper DTO 사용 O)
      */
     @Transactional(readOnly = true)
     public Page<PopularBookDto> getPopularBooks(Long userId, Pageable pageable) {
@@ -159,7 +165,6 @@ public class BookService {
             uriBuilder.queryParam("age", ageCode);
         }
 
-        // [수정] .build(true) -> .build().encode()
         URI uri = uriBuilder.build()
                 .encode()
                 .toUri();
@@ -167,16 +172,23 @@ public class BookService {
         // 4. API 호출 및 파싱
         try {
             String jsonResponse = restTemplate.getForObject(uri, String.class);
-            LibraryApiDtos.PopularBookResponse response = objectMapper.readValue(jsonResponse, LibraryApiDtos.PopularBookResponse.class);
+            log.info("External API Response JSON for popular books: {}", jsonResponse);
 
-            if (response == null || response.getDocs() == null) {
+            // [수정] Wrapper DTO를 사용하여 파싱합니다.
+            LibraryApiDtos.PopularBookResponseWrapper wrapper = objectMapper.readValue(jsonResponse, LibraryApiDtos.PopularBookResponseWrapper.class);
+
+            if (wrapper == null || wrapper.getResponse() == null || wrapper.getResponse().getDocs() == null) {
                 log.warn("Popular books API response is empty or malformed.");
                 return Page.empty(pageable);
             }
 
+            // Wrapper에서 실제 응답 데이터를 추출합니다.
+            LibraryApiDtos.PopularBookResponse response = wrapper.getResponse();
+
+            // [수정] .map(Wrapper::getDoc)을 추가하여 중첩된 doc 객체를 꺼냅니다.
             List<PopularBookDto> popularBooks = response.getDocs().stream()
-                    .map(LibraryApiDtos.PopularBookDocWrapper::getDoc)
-                    .map(PopularBookDto::from)
+                    .map(LibraryApiDtos.PopularBookDocWrapper::getDoc) // PopularBookDocWrapper -> PopularBookDoc
+                    .map(PopularBookDto::from)                   // PopularBookDoc -> PopularBookDto
                     .collect(Collectors.toList());
 
             return new PageImpl<>(popularBooks, pageable, response.getNumFound());
@@ -197,7 +209,7 @@ public class BookService {
     }
 
     /**
-     * [기존] API #6 호출
+     * [기존] API #6 호출 (Wrapper DTO 사용 X)
      */
     private LibraryApiDtos.BookInfo fetchBookDetailsFromApi(String isbn13) {
         URI uri = UriComponentsBuilder
@@ -205,21 +217,23 @@ public class BookService {
                 .queryParam("authKey", apiKey)
                 .queryParam("isbn13", isbn13)
                 .queryParam("format", "json")
-                // [수정] .build(true) -> .build().encode()
                 .build()
                 .encode()
                 .toUri();
 
         try {
             String jsonResponse = restTemplate.getForObject(uri, String.class);
-            LibraryApiDtos.DetailResponseWrapper wrapper = objectMapper.readValue(jsonResponse, LibraryApiDtos.DetailResponseWrapper.class);
+            log.info("External API Response JSON for detail [{}]: {}", isbn13, jsonResponse);
 
-            if (wrapper == null || wrapper.getResponse() == null || wrapper.getResponse().getDetail() == null || wrapper.getResponse().getDetail().getBook() == null) {
+            // [수정] Wrapper 없이 DetailResponse를 바로 파싱합니다. (500 에러 수정)
+            LibraryApiDtos.DetailResponse response = objectMapper.readValue(jsonResponse, LibraryApiDtos.DetailResponse.class);
+
+            if (response == null || response.getDetail() == null || response.getDetail().getBook() == null) {
                 log.warn("API response for detail is empty or malformed for isbn: {}", isbn13);
                 throw new CustomException(ErrorCode.NOT_FOUND, "API에서 도서 정보를 찾을 수 없습니다. ISBN: " + isbn13);
             }
 
-            return wrapper.getResponse().getDetail().getBook();
+            return response.getDetail().getBook();
 
         } catch (JsonProcessingException e) {
             log.error("Failed to parse book detail from API. ISBN: " + isbn13, e);
@@ -237,7 +251,6 @@ public class BookService {
         Integer publicationYear = null;
         try {
             if (apiBook.getPublicationYear() != null && !apiBook.getPublicationYear().isBlank()) {
-                // "YYYY" 형식 외의 값(e.g., "2020 ")을 처리하기 위해 trim() 추가
                 publicationYear = Integer.parseInt(apiBook.getPublicationYear().trim());
             }
         } catch (NumberFormatException e) {
@@ -251,15 +264,12 @@ public class BookService {
                 .authors(apiBook.getAuthors())
                 .publisher(apiBook.getPublisher())
                 .publicationYear(publicationYear)
-                // .publicationDate() // API #6은 상세 출판일자(YYYY-MM-DD)를 주지 않습니다.
                 .classNo(apiBook.getClassNo())
                 .classNm(apiBook.getClassNm())
                 .description(apiBook.getDescription())
                 .bookImageUrl(apiBook.getBookImageURL())
                 .vol(apiBook.getVol())
                 .additionSymbol(apiBook.getAdditionSymbol())
-                // .createdAt(LocalDateTime.now()) // @CreationTimestamp가 엔티티에 있다면 자동 처리됨
-                // .updatedAt(LocalDateTime.now()) // @UpdateTimestamp가 엔티티에 있다면 자동 처리됨
                 .build();
     }
 
