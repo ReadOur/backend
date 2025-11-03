@@ -12,7 +12,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -44,7 +44,7 @@ public class CommunityController {
     public ResponseEntity<ApiResponseDto<Page<PostSummaryDto>>> searchPosts(
             @RequestParam PostSearchType type,
             @RequestParam String keyword,
-            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+            @ParameterObject Pageable pageable
     ) {
         Long currentUserId = 1L; // TODO: Get authenticated user ID. 비회원은 null
         Page<PostSummaryDto> postPage = communityService.searchPosts(type, keyword, pageable, currentUserId);
@@ -130,7 +130,7 @@ public class CommunityController {
     })
     @GetMapping("/posts")
     public ResponseEntity<ApiResponseDto<Page<PostSummaryDto>>> getPostList(
-            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
+            @ParameterObject Pageable pageable,
             @RequestParam(required = false) PostCategory category
     ) {
         Long currentUserId = 1L; // TODO: Get authenticated user Id. 비회원은 null

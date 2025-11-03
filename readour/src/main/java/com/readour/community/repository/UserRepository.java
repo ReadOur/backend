@@ -1,4 +1,4 @@
-package com.readour.common.repository;
+package com.readour.community.repository;
 
 import com.readour.common.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
