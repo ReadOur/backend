@@ -113,13 +113,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     protected ResponseEntity<Object> handleHttpMediaTypeNotSupported(HttpMediaTypeNotSupportedException ex, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
         return buildErrorResponse(ex, ErrorCode.UNPROCESSABLE_ENTITY.getDefaultMessage(), ErrorCode.UNPROCESSABLE_ENTITY.getHttpStatus(), request);
     }
-
-    /*@ExceptionHandler(NoHandlerFoundException.class)
+/*
+    @ExceptionHandler(NoHandlerFoundException.class)
     public ResponseEntity<Object> handleNoHandlerFound(NoHandlerFoundException ex, WebRequest request) {
         return buildErrorResponse(ex, ErrorCode.NOT_FOUND.getDefaultMessage(), ErrorCode.NOT_FOUND.getHttpStatus(), request);
     }
-
-    *//*@ExceptionHandler(AccessDeniedException.class)
+*/
+    /*@ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Object> handleAccessDenied(AccessDeniedException ex, WebRequest request) {
         return buildErrorResponse(ex, ErrorCode.FORBIDDEN.getDefaultMessage(), ErrorCode.FORBIDDEN.getHttpStatus(), request);
     }*//*
@@ -128,8 +128,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     public ResponseEntity<Object> handleDataIntegrityViolation(DataIntegrityViolationException ex, WebRequest request) {
         return buildErrorResponse(ex, ErrorCode.CONFLICT.getDefaultMessage(), ErrorCode.CONFLICT.getHttpStatus(), request);
     }
-
-    *//*@ExceptionHandler(MaxUploadSizeExceededException.class)
+/*
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Object> handleMaxUploadSizeExceeded(MaxUploadSizeExceededException ex, WebRequest request) {
         return buildErrorResponse(ex, ErrorCode.UNPROCESSABLE_ENTITY.getDefaultMessage(), ErrorCode.UNPROCESSABLE_ENTITY.getHttpStatus(), request);
     }*//*
@@ -139,5 +139,6 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     public ResponseEntity<Object> handleAllUncaughtException(Exception exception, WebRequest request) {
         return buildErrorResponse(exception, ErrorCode.INTERNAL_SERVER_ERROR.getDefaultMessage(), ErrorCode.INTERNAL_SERVER_ERROR.getHttpStatus(), request);
-    }*/
+    }
+*/
 }

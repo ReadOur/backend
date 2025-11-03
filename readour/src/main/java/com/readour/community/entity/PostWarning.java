@@ -1,12 +1,18 @@
 package com.readour.community.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
 
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 @Entity @Table(name = "post_warning")
-@IdClass(PostWarningId.class)
 public class PostWarning {
-    @Id private Long postId;
-    @Id private String warning;
+    @EmbeddedId
+    private PostWarningId id;
+
+    @JsonIgnore
+    @MapsId("postId")
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "post_id", insertable = false, updatable = false)
+    private Post post;
 }

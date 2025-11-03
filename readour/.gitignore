@@ -35,3 +35,6 @@ out/
 
 ### VS Code ###
 .vscode/
+
+# Sensitive configuration
+readour/src/main/resources/application.properties

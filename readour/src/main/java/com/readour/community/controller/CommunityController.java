@@ -1,8 +1,16 @@
 package com.readour.community.controller;
 
 import com.readour.common.dto.ApiResponseDto;
+import com.readour.common.dto.ErrorResponseDto;
 import com.readour.community.dto.*;
+import com.readour.community.enums.PostCategory;
+import com.readour.community.enums.PostSearchType;
 import com.readour.community.service.CommunityService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
@@ -22,10 +30,44 @@ public class CommunityController {
 
     private final CommunityService communityService;
 
+    // (SD-18: 게시글 검색)
+    @Operation(summary = "게시글 검색")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "게시글 검색 성공",
+                    content = @Content(schema = @Schema(implementation = Page.class))), // Page<PostSummaryDto>
+            @ApiResponse(responseCode = "400", description = "잘못된 검색 타입 또는 정렬 파라미터",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class))),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+    })
+    @GetMapping("/posts/search")
+    public ResponseEntity<ApiResponseDto<Page<PostSummaryDto>>> searchPosts(
+            @RequestParam PostSearchType type,
+            @RequestParam String keyword,
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
+    ) {
+        Long currentUserId = 1L; // TODO: Get authenticated user ID. 비회원은 null
+        Page<PostSummaryDto> postPage = communityService.searchPosts(type, keyword, pageable, currentUserId);
+
+        ApiResponseDto<Page<PostSummaryDto>> response = ApiResponseDto.<Page<PostSummaryDto>>builder()
+                .status(HttpStatus.OK.value())
+                .body(postPage)
+                .message("게시글 검색 성공")
+                .build();
+        return ResponseEntity.ok(response);
+    }
+
     // (SD-19: 게시글 좋아요)
+    @Operation(summary = "게시글 좋아요")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "좋아요/취소 성공. 'liked: true'는 좋아요가 추가된 상태.",
+                    content = @Content(schema = @Schema(implementation = Map.class))),
+            @ApiResponse(responseCode = "404", description = "게시글을 찾을 수 없음",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+    })
     @PostMapping("/posts/{postId}/like")
     public ResponseEntity<ApiResponseDto<Map<String,Boolean>>> likePost(@PathVariable Long postId) {
-        Long currentUserId = 1L; // TODO: Replace with actual authenticated user ID
+        Long currentUserId = 1L; // TODO: Replace with actual authenticated user ID, 비회원 접근 금지
         boolean isLiked = communityService.toggleLike(postId, currentUserId);
 
         ApiResponseDto<Map<String, Boolean>> response = ApiResponseDto.<Map<String, Boolean>>builder()
@@ -37,6 +79,13 @@ public class CommunityController {
     }
 
     // (SD-11: 게시글 작성)
+    @Operation(summary = "게시글 작성")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "게시글 작성 성공",
+                    content = @Content(schema = @Schema(implementation = PostResponseDto.class))),
+            @ApiResponse(responseCode = "404", description = "작성자 또는 관련 도서를 찾을 수 없음",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+    })
     @PostMapping("/posts")
     public ResponseEntity<ApiResponseDto<PostResponseDto>> createPost(@RequestBody PostCreateRequestDto requestDto) {
         Long currentUserId = 1L; // TODO: Replace with actual authenticated user ID
@@ -44,7 +93,7 @@ public class CommunityController {
         PostResponseDto createdPost = communityService.createPost(requestDto, currentUserId);
 
         ApiResponseDto<PostResponseDto> response = ApiResponseDto.<PostResponseDto>builder()
-                .status(HttpStatus.CREATED.value()) // 201
+                .status(HttpStatus.CREATED.value())
                 .body(createdPost)
                 .message("게시글이 성공적으로 생성되었습니다.")
                 .build();
@@ -53,40 +102,59 @@ public class CommunityController {
     }
 
     // (SD-10: 게시글 조회)
+    @Operation(summary = "게시글 조회")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "게시글 상세 조회 성공",
+                    content = @Content(schema = @Schema(implementation = PostResponseDto.class))),
+            @ApiResponse(responseCode = "404", description = "게시글을 찾을 수 없음",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+    })
     @GetMapping("/posts/{postId}")
     public ResponseEntity<ApiResponseDto<PostResponseDto>> getPostDetail(@PathVariable Long postId) {
-        PostResponseDto postDetail = communityService.getPostDetail(postId);
+        Long currentUserId = 1L; // TODO: Get authenticated user Id. 비회원은 null
+        PostResponseDto postDetail = communityService.getPostDetail(postId, currentUserId);
 
         ApiResponseDto<PostResponseDto> response = ApiResponseDto.<PostResponseDto>builder()
-                .status(HttpStatus.OK.value()) // 200
+                .status(HttpStatus.OK.value())
                 .body(postDetail)
                 .message("게시글 상세 조회 성공")
                 .build();
-
-        return ResponseEntity.ok(response); // .ok() is shorthand for status(HttpStatus.OK)
+        return ResponseEntity.ok(response);
     }
 
     // (SD-09: 게시글 목록 조회)
+    @Operation(summary = "게시글 목록 조회")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "게시글 목록 조회 성공",
+                    content = @Content(schema = @Schema(implementation = Page.class))) // Page<PostSummaryDto>
+    })
     @GetMapping("/posts")
     public ResponseEntity<ApiResponseDto<Page<PostSummaryDto>>> getPostList(
-            @PageableDefault(
-                    size = 10,
-                    sort = "createdAt",
-                    direction = Sort.Direction.DESC
-            ) Pageable pageable
+            @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable,
+            @RequestParam(required = false) PostCategory category
     ) {
-        Page<PostSummaryDto> postPage = communityService.getPostList(pageable);
+        Long currentUserId = 1L; // TODO: Get authenticated user Id. 비회원은 null
+
+        Page<PostSummaryDto> postPage = communityService.getPostList(pageable, currentUserId, category);
 
         ApiResponseDto<Page<PostSummaryDto>> response = ApiResponseDto.<Page<PostSummaryDto>>builder()
-                .status(HttpStatus.OK.value()) // 200
+                .status(HttpStatus.OK.value())
                 .body(postPage)
                 .message("게시글 목록 조회 성공")
                 .build();
-
         return ResponseEntity.ok(response);
     }
 
     // (SD-12: 게시글 수정)
+    @Operation(summary = "게시글 수정")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "게시글 수정 성공",
+                    content = @Content(schema = @Schema(implementation = PostResponseDto.class))),
+            @ApiResponse(responseCode = "403", description = "수정 권한이 없음 (작성자 아님)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class))),
+            @ApiResponse(responseCode = "404", description = "게시글 또는 관련 도서를 찾을 수 없음",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+    })
     @PutMapping("/posts/{postId}")
     public ResponseEntity<ApiResponseDto<PostResponseDto>> updatePost(@PathVariable Long postId,
                                                                       @RequestBody PostUpdateRequestDto requestDto) {
@@ -94,7 +162,7 @@ public class CommunityController {
         PostResponseDto updatedPost = communityService.updatePost(postId, requestDto, currentUserId);
 
         ApiResponseDto<PostResponseDto> response = ApiResponseDto.<PostResponseDto>builder()
-                .status(HttpStatus.OK.value()) // 200
+                .status(HttpStatus.OK.value())
                 .body(updatedPost)
                 .message("게시글이 성공적으로 수정되었습니다.")
                 .build();
@@ -103,25 +171,39 @@ public class CommunityController {
     }
 
     // (SD-13: 게시글 삭제)
+    @Operation(summary = "게시글 삭제")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "게시글 삭제 성공 (Soft delete)",
+                    content = @Content(schema = @Schema(implementation = Void.class))),
+            @ApiResponse(responseCode = "403", description = "삭제 권한이 없음 (작성자 아님)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class))),
+            @ApiResponse(responseCode = "404", description = "게시글을 찾을 수 없음",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+    })
     @DeleteMapping("/posts/{postId}")
     public ResponseEntity<ApiResponseDto<Void>> deletePost(@PathVariable Long postId) {
         Long currentUserId = 1L; // TODO: Replace with actual authenticated user ID
         communityService.deletePost(postId, currentUserId);
 
         ApiResponseDto<Void> response = ApiResponseDto.<Void>builder()
-                .status(HttpStatus.OK.value()) // Or HttpStatus.NO_CONTENT.value() (204) if preferred
-                .body(null) // No data body for delete
+                .status(HttpStatus.OK.value())
+                .body(null)
                 .message("게시글이 성공적으로 삭제되었습니다.")
                 .build();
 
-        // If using 204, return ResponseEntity.noContent().build(); is simpler,
-        // but if you want the consistent wrapper, use 200 OK.
         return ResponseEntity.ok(response);
     }
 
     // --- Comment API ---
 
     // (SD-14: 댓글 작성)
+    @Operation(summary = "댓글 작성")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "댓글 작성 성공",
+                    content = @Content(schema = @Schema(implementation = CommentResponseDto.class))),
+            @ApiResponse(responseCode = "404", description = "게시글 또는 작성자를 찾을 수 없음",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+    })
     @PostMapping("/posts/{postId}/comments")
     public ResponseEntity<ApiResponseDto<CommentResponseDto>> addComment(@PathVariable Long postId,
                                                                          @RequestBody CommentCreateRequestDto requestDto) {
@@ -129,7 +211,7 @@ public class CommunityController {
         CommentResponseDto createdComment = communityService.addComment(postId, requestDto, currentUserId);
 
         ApiResponseDto<CommentResponseDto> response = ApiResponseDto.<CommentResponseDto>builder()
-                .status(HttpStatus.CREATED.value()) // 201
+                .status(HttpStatus.CREATED.value())
                 .body(createdComment)
                 .message("댓글이 성공적으로 작성되었습니다.")
                 .build();
@@ -138,6 +220,15 @@ public class CommunityController {
     }
 
     // (SD-15: 댓글 수정)
+    @Operation(summary = "댓글 수정")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "댓글 수정 성공",
+                    content = @Content(schema = @Schema(implementation = CommentResponseDto.class))),
+            @ApiResponse(responseCode = "403", description = "수정 권한이 없음 (작성자 아님)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class))),
+            @ApiResponse(responseCode = "404", description = "댓글을 찾을 수 없음",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+    })
     @PutMapping("/comments/{commentId}")
     public ResponseEntity<ApiResponseDto<CommentResponseDto>> updateComment(@PathVariable Long commentId,
                                                                             @RequestBody CommentUpdateRequestDto requestDto) {
@@ -145,7 +236,7 @@ public class CommunityController {
         CommentResponseDto updatedComment = communityService.updateComment(commentId, requestDto, currentUserId);
 
         ApiResponseDto<CommentResponseDto> response = ApiResponseDto.<CommentResponseDto>builder()
-                .status(HttpStatus.OK.value()) // 200
+                .status(HttpStatus.OK.value())
                 .body(updatedComment)
                 .message("댓글이 성공적으로 수정되었습니다.")
                 .build();
@@ -154,13 +245,22 @@ public class CommunityController {
     }
 
     // (SD-16: 댓글 삭제)
+    @Operation(summary = "댓글 삭제")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "댓글 삭제 성공 (Soft delete)",
+                    content = @Content(schema = @Schema(implementation = Void.class))),
+            @ApiResponse(responseCode = "403", description = "삭제 권한이 없음 (작성자 아님)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class))),
+            @ApiResponse(responseCode = "404", description = "댓글을 찾을 수 없음",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+    })
     @DeleteMapping("/comments/{commentId}")
     public ResponseEntity<ApiResponseDto<Void>> deleteComment(@PathVariable Long commentId) {
         Long currentUserId = 1L; // TODO: Replace with actual authenticated user ID
         communityService.deleteComment(commentId, currentUserId);
 
         ApiResponseDto<Void> response = ApiResponseDto.<Void>builder()
-                .status(HttpStatus.OK.value()) // Or 204
+                .status(HttpStatus.OK.value())
                 .body(null)
                 .message("댓글이 성공적으로 삭제되었습니다.")
                 .build();
