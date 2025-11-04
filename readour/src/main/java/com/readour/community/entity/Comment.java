@@ -1,5 +1,6 @@
 package com.readour.community.entity;
 
+import com.readour.common.entity.User;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.*;
@@ -12,8 +13,9 @@ public class Comment {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long commentId;
     private Long postId;
-    private Long userId;
-    private Long parentCommentId;
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "user_id")
+    private User user;
     @Lob private String content;
     private Boolean isDeleted = false;
     private Boolean isHidden = false;
