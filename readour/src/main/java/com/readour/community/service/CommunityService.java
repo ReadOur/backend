@@ -140,7 +140,7 @@ public class CommunityService {
 
     @Transactional
     public boolean toggleLike(Long postId, Long userId) {
-        if (!postRepository.existsById(postId)) {
+        if (postRepository.findByPostIdAndIsDeletedFalse(postId).isEmpty()) {
             throw new CustomException(ErrorCode.NOT_FOUND, "Post not found with id: " + postId);
         }
 
@@ -161,7 +161,7 @@ public class CommunityService {
 
     @Transactional
     public PostResponseDto updatePost(Long postId, PostUpdateRequestDto requestDto, Long userId) {
-        Post post = postRepository.findById(postId)
+        Post post = postRepository.findByPostIdAndIsDeletedFalse(postId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Post not found with id: " + postId));
 
         if (!post.getUser().getId().equals(userId)) {
@@ -202,7 +202,7 @@ public class CommunityService {
 
     @Transactional
     public void deletePost(Long postId, Long userId) {
-        Post post = postRepository.findById(postId)
+        Post post = postRepository.findByPostIdAndIsDeletedFalse(postId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Post not found with id: " + postId));
 
         if (!post.getUser().getId().equals(userId)) {
@@ -224,8 +224,9 @@ public class CommunityService {
 
     @Transactional
     public CommentResponseDto addComment(Long postId, CommentCreateRequestDto requestDto, Long userId) {
-        if (!postRepository.existsById(postId)) {
-            throw new CustomException(ErrorCode.NOT_FOUND, "Post not found with id: " + postId);        }
+        if (postRepository.findByPostIdAndIsDeletedFalse(postId).isEmpty()) {
+            throw new CustomException(ErrorCode.NOT_FOUND, "Post not found with id: " + postId);
+        }
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));

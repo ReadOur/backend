@@ -225,15 +225,14 @@ public class BookService {
             String jsonResponse = restTemplate.getForObject(uri, String.class);
             log.info("External API Response JSON for detail [{}]: {}", isbn13, jsonResponse);
 
-            // [수정] Wrapper 없이 DetailResponse를 바로 파싱합니다. (500 에러 수정)
-            LibraryApiDtos.DetailResponse response = objectMapper.readValue(jsonResponse, LibraryApiDtos.DetailResponse.class);
+            LibraryApiDtos.DetailResponseWrapper wrapper = objectMapper.readValue(jsonResponse, LibraryApiDtos.DetailResponseWrapper.class);
 
-            if (response == null || response.getDetail() == null || response.getDetail().getBook() == null) {
+            if (wrapper == null || wrapper.getResponse() == null || wrapper.getResponse().getDetail() == null) {
                 log.warn("API response for detail is empty or malformed for isbn: {}", isbn13);
                 throw new CustomException(ErrorCode.NOT_FOUND, "API에서 도서 정보를 찾을 수 없습니다. ISBN: " + isbn13);
             }
 
-            return response.getDetail().getBook();
+            return wrapper.getResponse().getDetail().getBook();
 
         } catch (JsonProcessingException e) {
             log.error("Failed to parse book detail from API. ISBN: " + isbn13, e);
