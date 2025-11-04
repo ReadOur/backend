@@ -12,7 +12,7 @@ public class CalendarEvent {
 
     private Long calendarId;
     private String title;
-    @Lob private String description;
+    private String description;
     private String location;
     private LocalDateTime startsAt;
     private LocalDateTime endsAt;

@@ -26,13 +26,7 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -87,6 +81,7 @@ public class FileAssetService {
             throw new CustomException(ErrorCode.BAD_REQUEST, "파일 연결 정보가 올바르지 않습니다.");
         }
 
+        // ensure file exists
         getFile(fileId);
 
         FileLinkId id = new FileLinkId(fileId, normalizeTargetType(targetType), targetId);
@@ -113,7 +108,7 @@ public class FileAssetService {
         }
 
         Set<Long> distinctIds = fileIds.stream()
-                .filter(Objects::nonNull)
+                .filter(java.util.Objects::nonNull)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         if (distinctIds.isEmpty()) {
             return;
@@ -146,6 +141,7 @@ public class FileAssetService {
         Map<Long, FileAsset> assetMap = fileAssetRepository.findAllByFileIdIn(fileIds).stream()
                 .collect(Collectors.toMap(FileAsset::getFileId, asset -> asset));
 
+        // filter out stale links when asset missing
         boolean hasMissing = fileIds.stream().anyMatch(id -> !assetMap.containsKey(id));
         if (hasMissing) {
             fileLinkRepository.deleteAllByTarget(normalized, targetId);

@@ -1,9 +1,12 @@
 package com.readour.community.service;
 
+import com.readour.common.dto.FileResponseDto;
 import com.readour.common.entity.Book;
+import com.readour.common.entity.FileAsset;
 import com.readour.common.entity.User;
 import com.readour.common.exception.CustomException;
 import com.readour.common.enums.ErrorCode;
+import com.readour.common.service.FileAssetService;
 import com.readour.community.repository.BookRepository;
 import com.readour.community.repository.UserRepository;
 import com.readour.community.dto.*;
@@ -41,6 +44,7 @@ public class CommunityService {
     private final UserRepository userRepository;
     private final BookRepository bookRepository;
     private final PostSpecification postSpecification;
+    private final FileAssetService fileAssetService;
 
     @Transactional(readOnly = true) // Use readOnly for read operations
     public Page<PostSummaryDto> getPostList(Pageable pageable, Long currentUserId, PostCategory category) {
@@ -113,7 +117,10 @@ public class CommunityService {
             savedPost = postRepository.save(savedPost);
         }
 
-        return PostResponseDto.fromEntity(savedPost, List.of(), 0L, 0L, false);
+        fileAssetService.replaceLinks("POST", savedPost.getPostId(), requestDto.getAttachmentIds());
+        List<FileResponseDto> attachments = mapToResponses(fileAssetService.getLinkedAssets("POST", savedPost.getPostId()));
+
+        return PostResponseDto.fromEntity(savedPost, List.of(), 0L, 0L, false, attachments);
     }
 
     @Transactional
@@ -135,12 +142,14 @@ public class CommunityService {
         Long commentCount = commentRepository.countByPostIdAndIsDeletedFalse(postId);
         Boolean isLiked = (currentUserId == null) ? false : postLikeRepository.existsByIdPostIdAndIdUserId(postId, currentUserId);
 
-        return PostResponseDto.fromEntity(post, comments, likeCount, commentCount, isLiked);
+        List<FileResponseDto> attachments = mapToResponses(fileAssetService.getLinkedAssets("POST", postId));
+
+        return PostResponseDto.fromEntity(post, comments, likeCount, commentCount, isLiked, attachments);
     }
 
     @Transactional
     public boolean toggleLike(Long postId, Long userId) {
-        if (postRepository.findByPostIdAndIsDeletedFalse(postId).isEmpty()) {
+        if (!postRepository.existsById(postId)) {
             throw new CustomException(ErrorCode.NOT_FOUND, "Post not found with id: " + postId);
         }
 
@@ -161,7 +170,7 @@ public class CommunityService {
 
     @Transactional
     public PostResponseDto updatePost(Long postId, PostUpdateRequestDto requestDto, Long userId) {
-        Post post = postRepository.findByPostIdAndIsDeletedFalse(postId)
+        Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Post not found with id: " + postId));
 
         if (!post.getUser().getId().equals(userId)) {
@@ -186,6 +195,8 @@ public class CommunityService {
             post.setBook(book);
         } // TODO: 없으면 도서 검색 api 날려서 찾아보고도 없으면 404 날리기. 있으면 db 추가.
 
+        fileAssetService.replaceLinks("POST", postId, requestDto.getAttachmentIds());
+
         Post updatedPost = postRepository.save(post);
 
         List<CommentResponseDto> comments = commentRepository.findAllByPostId(postId)
@@ -197,12 +208,20 @@ public class CommunityService {
         Long commentCount = commentRepository.countByPostIdAndIsDeletedFalse(postId);
         Boolean isLiked = postLikeRepository.existsByIdPostIdAndIdUserId(postId, userId);
 
-        return PostResponseDto.fromEntity(updatedPost, comments, likeCount, commentCount, isLiked);
+        List<FileResponseDto> attachments = mapToResponses(fileAssetService.getLinkedAssets("POST", postId));
+
+        return PostResponseDto.fromEntity(updatedPost, comments, likeCount, commentCount, isLiked, attachments);
+    }
+
+    private List<FileResponseDto> mapToResponses(List<FileAsset> assets) {
+        return assets.stream()
+                .map(fileAssetService::toResponse)
+                .collect(Collectors.toList());
     }
 
     @Transactional
     public void deletePost(Long postId, Long userId) {
-        Post post = postRepository.findByPostIdAndIsDeletedFalse(postId)
+        Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Post not found with id: " + postId));
 
         if (!post.getUser().getId().equals(userId)) {
@@ -224,20 +243,18 @@ public class CommunityService {
 
     @Transactional
     public CommentResponseDto addComment(Long postId, CommentCreateRequestDto requestDto, Long userId) {
-        if (postRepository.findByPostIdAndIsDeletedFalse(postId).isEmpty()) {
-            throw new CustomException(ErrorCode.NOT_FOUND, "Post not found with id: " + postId);
-        }
+        if (!postRepository.existsById(postId)) {
+            throw new CustomException(ErrorCode.NOT_FOUND, "Post not found with id: " + postId);        }
 
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
 
-        Comment comment = Comment.builder()
-                .postId(postId)
-                .user(user)
-                .content(requestDto.getContent())
-                .isDeleted(false)
-                .isHidden(false)
-                .build();
+        Comment comment = new Comment();
+        comment.setPostId(postId);
+        comment.setUserId(user.getId());
+        comment.setContent(requestDto.getContent());
+        comment.setIsDeleted(false);
+        comment.setIsHidden(false);
 
         Comment savedComment = commentRepository.save(comment);
 
@@ -249,7 +266,7 @@ public class CommunityService {
         Comment comment = commentRepository.findByCommentIdAndIsDeletedFalse(commentId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Comment not found with id: " + commentId));
 
-        if (!comment.getUser().getId().equals(userId)) {
+        if (!comment.getUserId().equals(userId)) {
             throw new CustomException(ErrorCode.FORBIDDEN, "User does not have permission to update this comment");
         }
 
@@ -264,7 +281,7 @@ public class CommunityService {
         Comment comment = commentRepository.findByCommentIdAndIsDeletedFalse(commentId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Comment not found with id: " + commentId));
 
-        if (!comment.getUser().getId().equals(userId)) {
+        if (!comment.getUserId().equals(userId)) {
             throw new CustomException(ErrorCode.FORBIDDEN, "User does not have permission to delete this comment");
         }
 

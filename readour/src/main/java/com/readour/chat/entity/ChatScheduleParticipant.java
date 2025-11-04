@@ -1,6 +1,5 @@
 package com.readour.chat.entity;
 
-import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.IdClass;
@@ -19,21 +18,15 @@ import java.time.LocalDateTime;
 @AllArgsConstructor
 @Builder
 @Entity
-@Table(name = "chat_poll_vote")
-@IdClass(ChatPollVoteId.class)
-public class ChatPollVote {
+@Table(name = "chat_schedule_participant")
+@IdClass(ChatScheduleParticipantId.class)
+public class ChatScheduleParticipant {
 
     @Id
-    @Column(name = "poll_msg_id")
-    private Long pollMsgId;
+    private Long scheduleId;
 
     @Id
-    @Column(name = "user_id")
     private Long userId;
 
-    @Column(name = "selected_options", columnDefinition = "json")
-    private String selectedOptions;
-
-    @Column(name = "voted_at")
-    private LocalDateTime votedAt;
+    private LocalDateTime joinedAt;
 }
