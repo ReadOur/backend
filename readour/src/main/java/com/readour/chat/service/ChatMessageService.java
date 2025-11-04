@@ -5,13 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.readour.chat.dto.common.MessageDto;
 import com.readour.chat.dto.response.MessageListResponse;
 import com.readour.chat.entity.ChatMessage;
-import com.readour.chat.entity.ChatRoomMember;
 import com.readour.chat.entity.ChatMessageHide;
 import com.readour.chat.repository.ChatMessageHideRepository;
 import com.readour.chat.repository.ChatMessageRepository;
 import com.readour.chat.repository.ChatRoomMemberRepository;
 import com.readour.common.enums.ErrorCode;
-import com.readour.common.enums.Role;
 import com.readour.common.exception.CustomException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -75,16 +73,8 @@ public class ChatMessageService {
         ChatMessage message = chatMessageRepository.findById(messageId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "메시지를 찾을 수 없습니다."));
 
-        ChatRoomMember member = chatRoomMemberRepository.findByRoomIdAndUserIdAndIsActiveTrue(message.getRoomId(), userId)
+        chatRoomMemberRepository.findByRoomIdAndUserIdAndIsActiveTrue(message.getRoomId(), userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.FORBIDDEN, "채팅방에 참여 중이 아닙니다."));
-
-        if (isManagerOrOwner(member)) {
-            if (message.getDeletedAt() == null) {
-                message.setDeletedAt(LocalDateTime.now());
-                chatMessageRepository.save(message);
-            }
-            return;
-        }
 
         ChatMessageHide hide = chatMessageHideRepository.findByMsgIdAndUserId(messageId, userId)
                 .orElseGet(() -> ChatMessageHide.builder()
@@ -105,16 +95,8 @@ public class ChatMessageService {
         ChatMessage message = chatMessageRepository.findById(messageId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "메시지를 찾을 수 없습니다."));
 
-        ChatRoomMember member = chatRoomMemberRepository.findByRoomIdAndUserIdAndIsActiveTrue(message.getRoomId(), userId)
+        chatRoomMemberRepository.findByRoomIdAndUserIdAndIsActiveTrue(message.getRoomId(), userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.FORBIDDEN, "채팅방에 참여 중이 아닙니다."));
-
-        if (isManagerOrOwner(member)) {
-            if (message.getDeletedAt() != null) {
-                message.setDeletedAt(null);
-                chatMessageRepository.save(message);
-            }
-            return;
-        }
 
         chatMessageHideRepository.findByMsgIdAndUserId(messageId, userId)
                 .ifPresent(hide -> {
@@ -182,13 +164,6 @@ public class ChatMessageService {
                 .items(items)
                 .paging(paging)
                 .build();
-    }
-
-    private boolean isManagerOrOwner(ChatRoomMember member) {
-        if (member.getRole() == null) {
-            return false;
-        }
-        return member.getRole() == Role.MANAGER || member.getRole() == Role.OWNER;
     }
 
     private String serialize(MessageDto response) {
