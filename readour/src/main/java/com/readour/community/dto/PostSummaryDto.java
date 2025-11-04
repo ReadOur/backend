@@ -20,6 +20,7 @@ public class PostSummaryDto {
     private Long likeCount;
     private Long commentCount;
     private Boolean isLiked;
+    private Boolean isSpoiler;
     private LocalDateTime createdAt;
 
     public static PostSummaryDto fromEntity(Post post, Long likeCount, Long commentCount, Boolean isLiked) {
@@ -34,6 +35,7 @@ public class PostSummaryDto {
                 .likeCount(likeCount)
                 .commentCount(commentCount)
                 .isLiked(isLiked)
+                .isSpoiler(post.getIsSpoiler())
                 .createdAt(post.getCreatedAt())
                 .build();
     }
