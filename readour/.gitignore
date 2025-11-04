@@ -37,4 +37,7 @@ out/
 .vscode/
 
 # Sensitive configuration
-readour/src/main/resources/application.properties
+readour/src/main/resources/application.properties.env
+readour/.env
+.env
+*.env
