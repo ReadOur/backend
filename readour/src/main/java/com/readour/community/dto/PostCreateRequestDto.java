@@ -16,4 +16,5 @@ public class PostCreateRequestDto {
     private Long bookId;
     private Boolean isSpoiler;
     private List<String> warnings;
+    private List<Long> attachmentIds;
 }

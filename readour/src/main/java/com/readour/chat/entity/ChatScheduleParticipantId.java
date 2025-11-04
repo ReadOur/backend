@@ -5,7 +5,7 @@ import lombok.EqualsAndHashCode;
 import java.io.Serializable;
 
 @EqualsAndHashCode
-public class ChatPollVoteId implements Serializable {
-    private Long pollMsgId;
+public class ChatScheduleParticipantId implements Serializable {
+    private Long scheduleId;
     private Long userId;
 }

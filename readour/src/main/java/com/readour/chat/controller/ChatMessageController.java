@@ -13,9 +13,11 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.LocalDateTime;
 
@@ -79,6 +81,32 @@ public class ChatMessageController {
                 .status(HttpStatus.OK.value())
                 .body(saved)
                 .message("메시지를 전송했습니다.")
+                .build();
+
+        return ResponseEntity.ok(response);
+    }
+
+    @Operation(summary = "채팅 파일 메시지 전송")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "파일 메시지 전송 성공",
+                    content = @Content(schema = @Schema(implementation = MessageDto.class))),
+            @ApiResponse(responseCode = "400", description = "요청 형식 오류",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class))),
+            @ApiResponse(responseCode = "403", description = "권한 없음",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class))),
+            @ApiResponse(responseCode = "404", description = "채팅방 또는 사용자 없음",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+    })
+    @PostMapping(value = "/{roomId}/messages/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<ApiResponseDto<MessageDto>> sendFile(@PathVariable Long roomId,
+                                                               @RequestHeader("X-User-Id") Long userId,
+                                                               @RequestParam("file") MultipartFile file) {
+        MessageDto saved = chatMessageService.sendFile(roomId, userId, file);
+
+        ApiResponseDto<MessageDto> response = ApiResponseDto.<MessageDto>builder()
+                .status(HttpStatus.OK.value())
+                .body(saved)
+                .message("파일 메시지를 전송했습니다.")
                 .build();
 
         return ResponseEntity.ok(response);

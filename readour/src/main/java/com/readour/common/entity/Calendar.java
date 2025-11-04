@@ -1,5 +1,6 @@
 package com.readour.common.entity;
 
+import com.readour.common.enums.CalendarScope;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.*;
@@ -11,7 +12,8 @@ public class Calendar {
     private Long calendarId;
 
     private Long ownerUserId;
-    private String scope;
+    @Enumerated(EnumType.STRING)
+    private CalendarScope scope;
     private Long relatedRoomId;
     private String name;
     private LocalDateTime createdAt;

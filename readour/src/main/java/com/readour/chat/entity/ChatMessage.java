@@ -3,8 +3,6 @@ package com.readour.chat.entity;
 import jakarta.persistence.*;
 import lombok.*;
 import java.time.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
 @Entity

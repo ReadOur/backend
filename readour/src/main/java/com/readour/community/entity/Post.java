@@ -79,4 +79,5 @@ public class Post {
             this.warnings.add(postWarning);
         }
     }
+
 }

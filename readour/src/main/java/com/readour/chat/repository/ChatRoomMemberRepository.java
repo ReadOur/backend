@@ -26,6 +26,8 @@ public interface ChatRoomMemberRepository extends JpaRepository<ChatRoomMember, 
 
     List<ChatRoomMember> findAllByUserIdAndIsActiveTrueAndRoomIdIn(Long userId, Collection<Long> roomIds);
 
+    List<ChatRoomMember> findAllByRoomIdAndUserIdIn(Long roomId, Collection<Long> userIds);
+
     @Query("select max(m.pinOrder) from ChatRoomMember m where m.userId = :userId and m.isActive = true and m.pinnedAt is not null")
     Integer findMaxPinOrderByUserIdAndIsActiveTrue(@Param("userId") Long userId);
 

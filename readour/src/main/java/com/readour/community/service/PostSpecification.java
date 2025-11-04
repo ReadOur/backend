@@ -31,7 +31,7 @@ public class PostSpecification {
 
                 case TITLE_CONTENT:
                     Predicate titleLike = criteriaBuilder.like(criteriaBuilder.lower(root.get("title")), searchKeyword);
-                    Predicate contentLike = criteriaBuilder.like(root.get("content"), searchKeyword);
+                    Predicate contentLike = criteriaBuilder.like(criteriaBuilder.lower(root.get("content")), searchKeyword);
                     searchPredicate = criteriaBuilder.or(titleLike, contentLike);
                     break;
 

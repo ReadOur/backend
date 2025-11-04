@@ -18,14 +18,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RequestPart;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.util.UriUtils;
 
@@ -39,7 +32,7 @@ public class FileController {
     private final FileAssetService fileAssetService;
 
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @Operation(summary = "파일 업로드 / targetType : POST or CHAT_ROOM, targetId는 해당 게시글 또는 채팅방 / POSTMAN 테스트")
+    @Operation(summary = "파일 업로드 / 구현 및 테스트 함 / targetType : POST or CHAT_ROOM, targetId는 해당 게시글 또는 채팅방 / POSTMAN 테스트")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "파일 업로드 성공",
                     content = @Content(schema = @Schema(implementation = FileResponseDto.class)))
@@ -71,7 +64,8 @@ public class FileController {
         return ResponseEntity.ok(response);
     }
 
-    @Operation(summary = "파일 메타데이터 조회")
+
+    @Operation(summary = "파일 메타데이터 조회 / 구현 및 테스트 완료")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "메타데이터 조회 성공",
                     content = @Content(schema = @Schema(implementation = FileResponseDto.class))),
@@ -90,7 +84,7 @@ public class FileController {
         return ResponseEntity.ok(response);
     }
 
-    @Operation(summary = "파일 다운로드")
+    @Operation(summary = "파일 다운로드 / 구현 및 테스트 함 ")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "다운로드 성공"),
             @ApiResponse(responseCode = "404", description = "파일 없음",
