@@ -2,22 +2,26 @@ package com.readour.community.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.readour.common.entity.Book;
+import com.readour.common.entity.User;
+import com.readour.common.enums.ErrorCode;
+import com.readour.common.enums.Gender;
+import com.readour.common.exception.CustomException;
 import com.readour.community.dto.BookReviewCreateRequestDto;
 import com.readour.community.dto.BookReviewResponseDto;
 import com.readour.community.dto.BookReviewUpdateRequestDto;
 import com.readour.community.dto.BookSummaryDto;
 import com.readour.community.dto.LibraryApiDtos;
 import com.readour.community.dto.PopularBookDto;
-import com.readour.common.entity.Book;
-import com.readour.common.entity.User;
-import com.readour.common.enums.ErrorCode;
-import com.readour.common.enums.Gender;
-import com.readour.common.exception.CustomException;
+import com.readour.community.dto.BookHighlightCreateRequestDto;
+import com.readour.community.dto.BookHighlightResponseDto;
+import com.readour.community.dto.BookHighlightUpdateRequestDto;
+import com.readour.community.entity.BookHighlight;
 import com.readour.community.entity.BookReview;
+import com.readour.community.repository.BookHighlightRepository;
 import com.readour.community.repository.BookRepository;
 import com.readour.community.repository.BookReviewRepository;
 import com.readour.community.repository.UserRepository;
-
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -47,6 +51,7 @@ public class BookService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
     private final BookReviewRepository bookReviewRepository;
+    private final BookHighlightRepository bookHighlightRepository;
 
     @Value("${library.api.key}")
     private String apiKey;
@@ -347,7 +352,7 @@ public class BookService {
             throw new CustomException(ErrorCode.NOT_FOUND, "Book not found with id: " + bookId);
         }
 
-        // 2. 정렬 기준을 createdAt 내림차순(최신순)으로 고정 (요청사항)
+        // 2. 정렬 기준을 createdAt 내림차순(최신순)으로 고정
         Pageable sortedPageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
                 Sort.by(Sort.Direction.DESC, "createdAt"));
 
@@ -400,6 +405,92 @@ public class BookService {
         bookReviewRepository.delete(review);
     }
 
+    // (SD-31) 책 하이라이트 작성
+    @Transactional
+    public BookHighlightResponseDto addBookHighlight(Long bookId, Long userId, BookHighlightCreateRequestDto dto) {
+        // 1. 책 존재 여부 확인
+        if (!bookRepository.existsById(bookId)) {
+            throw new CustomException(ErrorCode.NOT_FOUND, "Book not found with id: " + bookId);
+        }
 
+        // 2. 작성자 정보 확인
+        User author = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+
+        // 3. 엔티티 생성 및 저장
+        BookHighlight highlight = BookHighlight.builder()
+                .bookId(bookId)
+                .userId(userId)
+                .content(dto.getContent())
+                .pageNumber(dto.getPageNumber())
+                .createdAt(LocalDateTime.now())
+                .updatedAt(LocalDateTime.now())
+                .build();
+
+        BookHighlight savedHighlight = bookHighlightRepository.save(highlight);
+
+        return BookHighlightResponseDto.fromEntity(savedHighlight, author);
+    }
+
+    // (SD-31) 책 하이라이트 조회
+    @Transactional(readOnly = true)
+    public Page<BookHighlightResponseDto> getBookHighlights(Long bookId, Pageable pageable) {
+        // 1. 책 존재 여부 확인
+        if (!bookRepository.existsById(bookId)) {
+            throw new CustomException(ErrorCode.NOT_FOUND, "Book not found with id: " + bookId);
+        }
+
+        // 2. 정렬 기준을 createdAt 내림차순(최신순)으로 고정
+        Pageable sortedPageable = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(),
+                Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        // 3. 하이라이트 조회
+        Page<BookHighlight> highlightPage = bookHighlightRepository.findAllByBookId(bookId, sortedPageable);
+
+        // 4. 작성자 닉네임 매핑 (N+1 방지)
+        List<Long> authorIds = highlightPage.getContent().stream()
+                .map(BookHighlight::getUserId)
+                .distinct()
+                .toList();
+
+        Map<Long, User> authorMap = userRepository.findAllById(authorIds).stream()
+                .collect(Collectors.toMap(User::getId, Function.identity()));
+
+        // 5. DTO로 변환
+        return highlightPage.map(highlight ->
+                BookHighlightResponseDto.fromEntity(highlight, authorMap.get(highlight.getUserId()))
+        );
+    }
+
+    // -----------------------------------------------------------------
+    // (SD-32) 책 하이라이트 수정
+    // -----------------------------------------------------------------
+    @Transactional
+    public BookHighlightResponseDto updateBookHighlight(Long highlightId, Long userId, BookHighlightUpdateRequestDto dto) {
+        // 1. 수정 권한 확인 (하이라이트 ID + 작성자 ID)
+        BookHighlight highlight = bookHighlightRepository.findByHighlightIdAndUserId(highlightId, userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.FORBIDDEN, "하이라이트를 수정할 권한이 없거나 하이라이트가 존재하지 않습니다."));
+
+        // 2. 내용 및 페이지 번호 수정
+        highlight.setContent(dto.getContent());
+        highlight.setPageNumber(dto.getPageNumber());
+        highlight.setUpdatedAt(LocalDateTime.now());
+
+        // 3. 작성자 정보 (DTO 반환용)
+        User author = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+
+        return BookHighlightResponseDto.fromEntity(highlight, author);
+    }
+
+    // (SD-33) 책 하이라이트 삭제
+    @Transactional
+    public void deleteBookHighlight(Long highlightId, Long userId) {
+        // 1. 삭제 권한 확인 (하이라이트 ID + 작성자 ID)
+        BookHighlight highlight = bookHighlightRepository.findByHighlightIdAndUserId(highlightId, userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.FORBIDDEN, "하이라이트를 삭제할 권한이 없거나 하이라이트가 존재하지 않습니다."));
+
+        // 2. 삭제
+        bookHighlightRepository.delete(highlight);
+    }
 }
-

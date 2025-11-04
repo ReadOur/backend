@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/books")
+@RequestMapping("/api")
 @RequiredArgsConstructor
 public class BookController {
 
@@ -173,6 +173,84 @@ public class BookController {
         return ResponseEntity.ok(ApiResponseDto.<Void>builder()
                 .status(HttpStatus.OK.value())
                 .message("리뷰가 성공적으로 삭제되었습니다.")
+                .build());
+    }
+
+    // (SD-31) 책 하이라이트 작성
+    @Operation(summary = "책 하이라이트 작성", description = "특정 책(bookId)에 대한 하이라이트(인용구)를 작성합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "하이라이트 작성 성공"),
+            @ApiResponse(responseCode = "404", description = "책 또는 사용자를 찾을 수 없음")
+    })
+    @PostMapping("/books/{bookId}/highlights")
+    public ResponseEntity<ApiResponseDto<BookHighlightResponseDto>> addBookHighlight(
+            @PathVariable Long bookId,
+            @RequestHeader("X-User-Id") Long userId, // TODO: 인증 기능으로 교체
+            @Valid @RequestBody BookHighlightCreateRequestDto requestDto
+    ) {
+        BookHighlightResponseDto highlight = bookService.addBookHighlight(bookId, userId, requestDto);
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponseDto.<BookHighlightResponseDto>builder()
+                .status(HttpStatus.CREATED.value())
+                .body(highlight)
+                .message("하이라이트가 성공적으로 작성되었습니다.")
+                .build());
+    }
+
+    // (SD-31) 책 하이라이트 조회
+    @Operation(summary = "책 하이라이트 조회", description = "특정 책(bookId)의 모든 하이라이트를 오래된순으로 조회합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "하이라이트 조회 성공"),
+            @ApiResponse(responseCode = "404", description = "책을 찾을 수 없음")
+    })
+    @GetMapping("/books/{bookId}/highlights")
+    public ResponseEntity<ApiResponseDto<Page<BookHighlightResponseDto>>> getBookHighlights(
+            @PathVariable Long bookId,
+            @ParameterObject Pageable pageable
+    ) {
+        Page<BookHighlightResponseDto> highlightPage = bookService.getBookHighlights(bookId, pageable);
+        return ResponseEntity.ok(ApiResponseDto.<Page<BookHighlightResponseDto>>builder()
+                .status(HttpStatus.OK.value())
+                .body(highlightPage)
+                .message("하이라이트 목록 조회 성공")
+                .build());
+    }
+
+    // (SD-32) 책 하이라이트 수정
+    @Operation(summary = "책 하이라이트 수정", description = "자신이 작성한 하이라이트(highlightId)를 수정합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "하이라이트 수정 성공"),
+            @ApiResponse(responseCode = "403", description = "수정 권한 없음 (작성자 아님)"),
+            @ApiResponse(responseCode = "404", description = "하이라이트 또는 사용자를 찾을 수 없음")
+    })
+    @PutMapping("/books/highlights/{highlightId}")
+    public ResponseEntity<ApiResponseDto<BookHighlightResponseDto>> updateBookHighlight(
+            @PathVariable Long highlightId,
+            @RequestHeader("X-User-Id") Long userId, // TODO: 인증 기능으로 교체
+            @Valid @RequestBody BookHighlightUpdateRequestDto requestDto
+    ) {
+        BookHighlightResponseDto highlight = bookService.updateBookHighlight(highlightId, userId, requestDto);
+        return ResponseEntity.ok(ApiResponseDto.<BookHighlightResponseDto>builder()
+                .status(HttpStatus.OK.value())
+                .body(highlight)
+                .message("하이라이트가 성공적으로 수정되었습니다.")
+                .build());
+    }
+
+    // (SD-33) 책 하이라이트 삭제
+    @Operation(summary = "책 하이라이트 삭제", description = "자신이 작성한 하이라이트(highlightId)를 삭제합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "하이라이트 삭제 성공"),
+            @ApiResponse(responseCode = "403", description = "삭제 권한 없음 (작성자 아님)")
+    })
+    @DeleteMapping("/books/highlights/{highlightId}")
+    public ResponseEntity<ApiResponseDto<Void>> deleteBookHighlight(
+            @PathVariable Long highlightId,
+            @RequestHeader("X-User-Id") Long userId // TODO: 인증 기능으로 교체
+    ) {
+        bookService.deleteBookHighlight(highlightId, userId);
+        return ResponseEntity.ok(ApiResponseDto.<Void>builder()
+                .status(HttpStatus.OK.value())
+                .message("하이라이트가 성공적으로 삭제되었습니다.")
                 .build());
     }
 }
