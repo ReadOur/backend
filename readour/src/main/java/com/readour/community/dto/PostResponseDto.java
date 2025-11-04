@@ -1,5 +1,6 @@
 package com.readour.community.dto;
 
+import com.readour.common.entity.Book;
 import com.readour.common.entity.User;
 import com.readour.community.entity.Post;
 import com.readour.community.entity.PostWarning;
@@ -21,10 +22,12 @@ public class PostResponseDto {
     private PostCategory category;
     private Long authorId;
     private String authorNickname;
+    private Long bookId;
     private Integer hit;
     private Long likeCount;
     private Long commentCount;
     private Boolean isLiked;
+    private Boolean isSpoiler;
     private List<PostWarning> warnings;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -32,6 +35,7 @@ public class PostResponseDto {
 
     public static PostResponseDto fromEntity(Post post, List<CommentResponseDto> comments, Long likeCount, Long commentCount, Boolean isLiked) {
         User author = post.getUser();
+        Book book = post.getBook();
 
         return PostResponseDto.builder()
                 .postId(post.getPostId())
@@ -40,10 +44,12 @@ public class PostResponseDto {
                 .category(post.getCategory())
                 .authorId(author != null ? author.getId() : null)
                 .authorNickname(author != null ? author.getNickname() : "탈퇴한 유저")
+                .bookId(book != null ? post.getBook().getBookId() : null)
                 .hit(post.getHit())
                 .likeCount(likeCount)
                 .commentCount(commentCount)
                 .isLiked(isLiked)
+                .isSpoiler(post.getIsSpoiler())
                 .warnings(post.getWarnings())
                 .createdAt(post.getCreatedAt())
                 .updatedAt(post.getUpdatedAt())
