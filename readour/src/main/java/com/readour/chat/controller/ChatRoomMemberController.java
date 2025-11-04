@@ -181,7 +181,7 @@ public class ChatRoomMemberController {
         return ResponseEntity.ok(body);
     }
 
-    @Operation(summary = "채팅방 멤버 프로필 조회")
+    @Operation(summary = "채팅방 멤버 프로필 조회 / 구현 완료 예외 처리 추가 필요")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "프로필 조회 성공",
                     content = @Content(schema = @Schema(implementation = RoomMemberProfileResponse.class))),

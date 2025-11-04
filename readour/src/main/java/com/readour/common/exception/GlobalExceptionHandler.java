@@ -117,8 +117,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(NoHandlerFoundException.class)
     public ResponseEntity<Object> handleNoHandlerFound(NoHandlerFoundException ex, WebRequest request) {
         return buildErrorResponse(ex, ErrorCode.NOT_FOUND.getDefaultMessage(), ErrorCode.NOT_FOUND.getHttpStatus(), request);
-    }
-*/
+    }*/
+
     /*@ExceptionHandler(AccessDeniedException.class)
     public ResponseEntity<Object> handleAccessDenied(AccessDeniedException ex, WebRequest request) {
         return buildErrorResponse(ex, ErrorCode.FORBIDDEN.getDefaultMessage(), ErrorCode.FORBIDDEN.getHttpStatus(), request);

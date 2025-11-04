@@ -25,7 +25,7 @@ public class ChatMessageModerationController {
 
     private final ChatMessageService chatMessageService;
 
-    @Operation(summary = "채팅 메시지 가리기")
+    @Operation(summary = "채팅 메시지 가리기 / 구현")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "메시지 가리기 성공",
                     content = @Content(schema = @Schema(implementation = ApiResponseDto.class))),
@@ -48,7 +48,7 @@ public class ChatMessageModerationController {
         return ResponseEntity.ok(body);
     }
 
-    @Operation(summary = "채팅 메시지 가리기 해제")
+    @Operation(summary = "채팅 메시지 가리기 해제 / 구현")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "메시지 가리기 해제 성공",
                     content = @Content(schema = @Schema(implementation = ApiResponseDto.class))),
