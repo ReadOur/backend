@@ -20,12 +20,10 @@ public class LibraryApiDtos {
     public static class SearchResponse {
         private int numFound;
 
-        // [수정] List<SearchDoc> -> List<SearchDocWrapper>
-        // API가 {"docs": [ {"doc": {...}} ]} 구조로 응답하기 때문입니다.
         private List<SearchDocWrapper> docs;
     }
 
-    // [신규] SearchDoc을 감싸는 래퍼 클래스
+    // SearchDoc을 감싸는 래퍼 클래스
     @Getter @Setter @NoArgsConstructor
     public static class SearchDocWrapper {
         private SearchDoc doc;
@@ -48,12 +46,10 @@ public class LibraryApiDtos {
     }
 
     // --- API #6 (도서 상세 조회) DTO ---
-    // (이 부분은 수정 없음, <detail><book>...</book></detail> 구조)
     @Getter @Setter @NoArgsConstructor
     public static class DetailResponseWrapper {
         private DetailResponse response;
     }
-    // ... (DetailResponse, DetailResult, BookInfo 기존과 동일) ...
     @Getter @Setter @NoArgsConstructor
     public static class DetailResponse {
         private DetailResult detail;
@@ -92,7 +88,6 @@ public class LibraryApiDtos {
 
 
     // --- API #3 (인기대출도서 조회) DTO ---
-
     @Getter @Setter @NoArgsConstructor
     public static class PopularBookResponseWrapper {
         private PopularBookResponse response;
@@ -102,12 +97,12 @@ public class LibraryApiDtos {
     public static class PopularBookResponse {
         private int numFound;
 
-        // [수정] List<PopularBookDoc> -> List<PopularBookDocWrapper>
+        // List<PopularBookDoc> -> List<PopularBookDocWrapper>
         // API #16과 동일한 {"docs": [ {"doc": {...}} ]} 구조를 가정합니다.
         private List<PopularBookDocWrapper> docs;
     }
 
-    // [신규] PopularBookDoc을 감싸는 래퍼 클래스
+    // PopularBookDoc을 감싸는 래퍼 클래스
     @Getter @Setter @NoArgsConstructor
     public static class PopularBookDocWrapper {
         private PopularBookDoc doc;

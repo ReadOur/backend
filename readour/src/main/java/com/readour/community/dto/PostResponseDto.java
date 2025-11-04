@@ -9,7 +9,6 @@ import com.readour.community.enums.PostCategory;
 import lombok.*;
 
 import java.time.LocalDateTime;
-import java.util.Comparator;
 import java.util.List;
 
 @Getter

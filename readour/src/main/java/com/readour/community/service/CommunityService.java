@@ -249,12 +249,13 @@ public class CommunityService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
 
-        Comment comment = new Comment();
-        comment.setPostId(postId);
-        comment.setUserId(user.getId());
-        comment.setContent(requestDto.getContent());
-        comment.setIsDeleted(false);
-        comment.setIsHidden(false);
+        Comment comment = Comment.builder()
+                .postId(postId)
+                .user(user)
+                .content(requestDto.getContent())
+                .isDeleted(false)
+                .isHidden(false)
+                .build();
 
         Comment savedComment = commentRepository.save(comment);
 
@@ -266,7 +267,7 @@ public class CommunityService {
         Comment comment = commentRepository.findByCommentIdAndIsDeletedFalse(commentId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Comment not found with id: " + commentId));
 
-        if (!comment.getUserId().equals(userId)) {
+        if (!comment.getUser().getId().equals(userId)) {
             throw new CustomException(ErrorCode.FORBIDDEN, "User does not have permission to update this comment");
         }
 
@@ -281,7 +282,7 @@ public class CommunityService {
         Comment comment = commentRepository.findByCommentIdAndIsDeletedFalse(commentId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Comment not found with id: " + commentId));
 
-        if (!comment.getUserId().equals(userId)) {
+        if (!comment.getUser().getId().equals(userId)) {
             throw new CustomException(ErrorCode.FORBIDDEN, "User does not have permission to delete this comment");
         }
 
