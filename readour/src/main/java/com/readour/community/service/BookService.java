@@ -598,12 +598,12 @@ public class BookService {
 
         // 2. 각 도서관에 대해 API #11 호출
         return libraries.stream()
-                .map(lib -> fetchBookAvailabilityFromApi(lib.getLibraryCode(), isbn13))
+                .map(lib -> fetchBookAvailabilityFromApi(lib.getLibraryCode(), lib.getLibraryName(), isbn13))
                 .collect(Collectors.toList());
     }
 
     // [Helper] (SD-34) API #11 (/bookExist) 호출
-    private LibraryAvailabilityDto fetchBookAvailabilityFromApi(String libCode, String isbn13) {
+    private LibraryAvailabilityDto fetchBookAvailabilityFromApi(String libCode, String libName, String isbn13) {
         URI uri = UriComponentsBuilder
                 .fromUriString(baseUrl + "/bookExist")
                 .queryParam("authKey", apiKey)
@@ -621,21 +621,21 @@ public class BookService {
             // API #11 응답 DTO (Wrapper)로 파싱
             LibraryApiDtos.BookExistResponseWrapper wrapper = objectMapper.readValue(jsonResponse, LibraryApiDtos.BookExistResponseWrapper.class);
 
-            if (wrapper == null || wrapper.getResult() == null) {
+            if (wrapper == null || wrapper.getResponse() == null || wrapper.getResponse().getResult() == null) {
                 log.warn("API #11 response is malformed. URI: {}", uri);
-                return LibraryAvailabilityDto.from(libCode, null); // 실패 시 (소장X)
+                return LibraryAvailabilityDto.from(libCode, libName, null); // 실패 시 (소장X)
             }
 
-            return LibraryAvailabilityDto.from(libCode, wrapper.getResult());
+            return LibraryAvailabilityDto.from(libCode, libName, wrapper.getResponse().getResult());
 
         } catch (HttpClientErrorException.NotFound e) {
             // 404 NotFound는 API가 도서관/책 정보를 못찾은 경우로, "소장 안함"으로 간주
             log.warn("API #11 returned 404. URI: {}", uri);
-            return LibraryAvailabilityDto.from(libCode, null);
+            return LibraryAvailabilityDto.from(libCode, libName, null);
         } catch (Exception e) {
             log.error("Failed to fetch API #11. URI: " + uri, e);
             // API 호출 자체 실패 시 (소장X)로 간주
-            return LibraryAvailabilityDto.from(libCode, null);
+            return LibraryAvailabilityDto.from(libCode, libName, null);
         }
     }
 }

@@ -64,7 +64,7 @@ public class UserLibraryController {
                 .build());
     }
 
-    @Operation(summary = "(SD-34-1) 사용자 선호 도서관 등록")
+    @Operation(summary = "사용자 선호 도서관 등록")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "등록 성공"),
             @ApiResponse(responseCode = "400", description = "요청 본문 유효성 검사 실패 (코드/이름 누락)",
@@ -89,7 +89,7 @@ public class UserLibraryController {
                 .build());
     }
 
-    @Operation(summary = "(SD-34-2) 사용자 선호 도서관 삭제")
+    @Operation(summary = "사용자 선호 도서관 삭제")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "삭제 성공"),
             @ApiResponse(responseCode = "404", description = "삭제할 도서관이 등록 목록에 없음 (Not Found)",

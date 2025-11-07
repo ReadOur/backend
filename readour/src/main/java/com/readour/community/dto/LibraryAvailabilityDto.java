@@ -22,16 +22,18 @@ public class LibraryAvailabilityDto {
     @Schema(description = "대출 가능 여부", example = "true")
     private boolean loanAvailable;
 
-    public static LibraryAvailabilityDto from(String libraryCode, BookExistResult apiResult) {
+    public static LibraryAvailabilityDto from(String libraryCode, String libraryName, BookExistResult apiResult) {
         if (apiResult == null) {
             return LibraryAvailabilityDto.builder()
                     .libraryCode(libraryCode)
+                    .libraryName(libraryName)
                     .hasBook(false)
                     .loanAvailable(false)
                     .build();
         }
         return LibraryAvailabilityDto.builder()
                 .libraryCode(libraryCode)
+                .libraryName(libraryName)
                 .hasBook("Y".equalsIgnoreCase(apiResult.getHasBook()))
                 .loanAvailable("Y".equalsIgnoreCase(apiResult.getLoanAvailable()))
                 .build();

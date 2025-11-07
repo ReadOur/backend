@@ -129,6 +129,11 @@ public class LibraryApiDtos {
     // API #11 (도서 소장/대출 여부) DTO
     @Getter @Setter @NoArgsConstructor
     public static class BookExistResponseWrapper {
+        private BookExistResponse response;
+    }
+
+    @Getter @Setter @NoArgsConstructor
+    public static class BookExistResponse {
         private BookExistResult result;
     }
 

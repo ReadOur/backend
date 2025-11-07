@@ -46,7 +46,7 @@ public class BookController {
     @GetMapping("/books/search")
     public ResponseEntity<ApiResponseDto<Page<BookSummaryDto>>> searchBooks(
             @RequestParam String keyword,
-            @PageableDefault(size = 10) Pageable pageable
+            @ParameterObject Pageable pageable
     ) {
         Page<BookSummaryDto> bookPage = bookService.searchBooksFromApi(keyword, pageable);
         return ResponseEntity.ok(ApiResponseDto.<Page<BookSummaryDto>>builder()
@@ -257,7 +257,7 @@ public class BookController {
     }
 
     // (SD-34) 선호 도서관 대출 가능 여부 조회
-    @Operation(summary = "(SD-34) 선호 도서관 대출 가능 여부 조회",
+    @Operation(summary = "선호 도서관 대출 가능 여부 조회",
             description = "특정 책(isbn13)에 대해, 사용자가 선호 등록한 모든 도서관의 소장/대출 여부를 조회합니다.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "대출 가능 여부 조회 성공"),
