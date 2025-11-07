@@ -2,28 +2,20 @@ package com.readour.community.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.readour.community.dto.BookSummaryDto;
-import com.readour.community.dto.LibraryApiDtos;
-import com.readour.community.dto.PopularBookDto;
 import com.readour.common.entity.Book;
 import com.readour.common.entity.User;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.enums.Gender;
 import com.readour.common.exception.CustomException;
-import com.readour.community.dto.BookReviewCreateRequestDto;
-import com.readour.community.dto.BookReviewResponseDto;
-import com.readour.community.dto.BookReviewUpdateRequestDto;
-import com.readour.community.dto.BookSummaryDto;
-import com.readour.community.dto.LibraryApiDtos;
-import com.readour.community.dto.PopularBookDto;
-import com.readour.community.dto.BookHighlightCreateRequestDto;
-import com.readour.community.dto.BookHighlightResponseDto;
-import com.readour.community.dto.BookHighlightUpdateRequestDto;
+import com.readour.community.dto.*;
 import com.readour.community.entity.BookHighlight;
 import com.readour.community.entity.BookReview;
+import com.readour.community.entity.UserInterestedLibrary;
+import com.readour.community.entity.UserInterestedLibraryId;
 import com.readour.community.repository.BookHighlightRepository;
 import com.readour.community.repository.BookRepository;
 import com.readour.community.repository.BookReviewRepository;
+import com.readour.community.repository.UserInterestedLibraryRepository;
 import com.readour.community.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +26,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -41,6 +34,7 @@ import java.net.URI;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Period;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -55,6 +49,7 @@ public class BookService {
     private final UserRepository userRepository;
     private final BookReviewRepository bookReviewRepository;
     private final BookHighlightRepository bookHighlightRepository;
+    private final UserInterestedLibraryRepository userInterestedLibraryRepository;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
@@ -466,9 +461,7 @@ public class BookService {
         );
     }
 
-    // -----------------------------------------------------------------
     // (SD-32) 책 하이라이트 수정
-    // -----------------------------------------------------------------
     @Transactional
     public BookHighlightResponseDto updateBookHighlight(Long highlightId, Long userId, BookHighlightUpdateRequestDto dto) {
         // 1. 수정 권한 확인 (하이라이트 ID + 작성자 ID)
@@ -496,5 +489,153 @@ public class BookService {
 
         // 2. 삭제
         bookHighlightRepository.delete(highlight);
+    }
+
+    // 선호 도서관 등록을 위한 도서관 검색
+    @Transactional(readOnly = true)
+    public Page<LibrarySearchResponseDto> searchLibraries(String region, String dtlRegion, Pageable pageable) {
+
+        UriComponentsBuilder uriBuilder = UriComponentsBuilder
+                .fromUriString(baseUrl + "/libSrch") // 👈 [1] API #1 (/libSrch) 호출
+                .queryParam("authKey", apiKey)
+                .queryParam("region", region) // 👈 [2] 필수 지역 코드 (예: "11" 서울)
+                .queryParam("pageNo", pageable.getPageNumber() + 1)
+                .queryParam("pageSize", pageable.getPageSize())
+                .queryParam("format", "json");
+
+        if (dtlRegion != null && !dtlRegion.isBlank()) {
+            uriBuilder.queryParam("dtl_region", dtlRegion); // 👈 [3] 선택 세부 지역 코드 (예: "11010" 종로구)
+        }
+
+        URI uri = uriBuilder.build().encode().toUri();
+
+        try {
+            String jsonResponse = restTemplate.getForObject(uri, String.class);
+            log.debug("API #1 Response for region [{}]: {}", region, jsonResponse);
+
+            LibraryApiDtos.LibSearchResponseWrapper wrapper = objectMapper.readValue(jsonResponse, LibraryApiDtos.LibSearchResponseWrapper.class);
+
+            if (wrapper == null || wrapper.getResponse() == null || wrapper.getResponse().getLibs() == null) {
+                log.warn("API #1 response is empty or malformed. URI: {}", uri);
+                return Page.empty(pageable);
+            }
+
+            LibraryApiDtos.LibSearchResponse response = wrapper.getResponse();
+
+            List<LibrarySearchResponseDto> dtos = response.getLibs().stream()
+                    .map(LibraryApiDtos.LibWrapper::getLib)
+                    .map(LibrarySearchResponseDto::from)
+                    .collect(Collectors.toList());
+
+            return new PageImpl<>(dtos, pageable, response.getNumFound());
+
+        } catch (Exception e) {
+            log.error("Failed to fetch API #1. URI: " + uri, e);
+            throw new CustomException(ErrorCode.BAD_GATEWAY, "도서관 API 호출에 실패했습니다.");
+        }
+    }
+
+    // (SD-34-1) 사용자 선호 도서관 등록
+    @Transactional
+    public UserLibraryResponseDto registerInterestedLibrary(Long userId, String libraryCode, String libraryName) {
+        // 1. 사용자 존재 여부 확인
+        if (!userRepository.existsById(userId)) {
+            throw new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId);
+        }
+
+        // 2. 선호 도서관 개수 제한 (최대 3개)
+        long currentCount = userInterestedLibraryRepository.countByUserId(userId);
+        if (currentCount >= 3) {
+            // 403 Forbidden 또는 400 Bad Request가 적절합니다. (정책 위반)
+            throw new CustomException(ErrorCode.FORBIDDEN, "선호 도서관은 최대 3개까지만 등록할 수 있습니다.");
+        }
+
+        // 3. 이미 등록되었는지 확인
+        UserInterestedLibraryId id = new UserInterestedLibraryId(userId, libraryCode);
+        if (userInterestedLibraryRepository.existsById(id)) {
+            throw new CustomException(ErrorCode.CONFLICT, "이미 등록된 도서관입니다.");
+        }
+
+        // 4. 등록
+        UserInterestedLibrary entity = UserInterestedLibrary.builder()
+                .userId(userId)
+                .libraryCode(libraryCode)
+                .libraryName(libraryName)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        UserInterestedLibrary savedEntity = userInterestedLibraryRepository.save(entity);
+        return UserLibraryResponseDto.fromEntity(savedEntity);
+    }
+
+    // (SD-34-2) 사용자 선호 도서관 삭제
+    @Transactional
+    public void deleteInterestedLibrary(Long userId, String libraryCode) {
+        UserInterestedLibraryId id = new UserInterestedLibraryId(userId, libraryCode);
+
+        UserInterestedLibrary entity = userInterestedLibraryRepository.findById(id)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "등록되지 않은 도서관입니다."));
+
+        userInterestedLibraryRepository.delete(entity);
+    }
+
+    // (Helper) 사용자 선호 도서관 목록 조회
+    @Transactional(readOnly = true)
+    public List<UserLibraryResponseDto> getInterestedLibraries(Long userId) {
+        return userInterestedLibraryRepository.findByUserId(userId).stream()
+                .map(UserLibraryResponseDto::fromEntity)
+                .collect(Collectors.toList());
+    }
+
+    // (SD-34) 선호 도서관 대상, 책 대출 가능 여부 조회
+    @Transactional(readOnly = true)
+    public List<LibraryAvailabilityDto> checkBookAvailability(Long userId, String isbn13) {
+        // 1. 사용자의 선호 도서관 목록 조회
+        List<UserInterestedLibrary> libraries = userInterestedLibraryRepository.findByUserId(userId);
+        if (libraries.isEmpty()) {
+            return new ArrayList<>(); // 선호 도서관이 없으면 빈 리스트 반환
+        }
+
+        // 2. 각 도서관에 대해 API #11 호출
+        return libraries.stream()
+                .map(lib -> fetchBookAvailabilityFromApi(lib.getLibraryCode(), isbn13))
+                .collect(Collectors.toList());
+    }
+
+    // [Helper] (SD-34) API #11 (/bookExist) 호출
+    private LibraryAvailabilityDto fetchBookAvailabilityFromApi(String libCode, String isbn13) {
+        URI uri = UriComponentsBuilder
+                .fromUriString(baseUrl + "/bookExist")
+                .queryParam("authKey", apiKey)
+                .queryParam("libCode", libCode)
+                .queryParam("isbn13", isbn13)
+                .queryParam("format", "json")
+                .build()
+                .encode()
+                .toUri();
+
+        try {
+            String jsonResponse = restTemplate.getForObject(uri, String.class);
+            log.debug("API #11 Response for libCode [{}], isbn [{}]: {}", libCode, isbn13, jsonResponse);
+
+            // API #11 응답 DTO (Wrapper)로 파싱
+            LibraryApiDtos.BookExistResponseWrapper wrapper = objectMapper.readValue(jsonResponse, LibraryApiDtos.BookExistResponseWrapper.class);
+
+            if (wrapper == null || wrapper.getResult() == null) {
+                log.warn("API #11 response is malformed. URI: {}", uri);
+                return LibraryAvailabilityDto.from(libCode, null); // 실패 시 (소장X)
+            }
+
+            return LibraryAvailabilityDto.from(libCode, wrapper.getResult());
+
+        } catch (HttpClientErrorException.NotFound e) {
+            // 404 NotFound는 API가 도서관/책 정보를 못찾은 경우로, "소장 안함"으로 간주
+            log.warn("API #11 returned 404. URI: {}", uri);
+            return LibraryAvailabilityDto.from(libCode, null);
+        } catch (Exception e) {
+            log.error("Failed to fetch API #11. URI: " + uri, e);
+            // API 호출 자체 실패 시 (소장X)로 간주
+            return LibraryAvailabilityDto.from(libCode, null);
+        }
     }
 }

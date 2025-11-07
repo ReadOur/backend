@@ -7,6 +7,10 @@ import com.readour.common.exception.CustomException;
 import com.readour.community.dto.*;
 import com.readour.common.entity.Book;
 import com.readour.community.service.BookService;
+import com.readour.community.dto.LibraryAvailabilityDto;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -22,6 +26,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -248,6 +253,27 @@ public class BookController {
         return ResponseEntity.ok(ApiResponseDto.<Void>builder()
                 .status(HttpStatus.OK.value())
                 .message("하이라이트가 성공적으로 삭제되었습니다.")
+                .build());
+    }
+
+    // (SD-34) 선호 도서관 대출 가능 여부 조회
+    @Operation(summary = "(SD-34) 선호 도서관 대출 가능 여부 조회",
+            description = "특정 책(isbn13)에 대해, 사용자가 선호 등록한 모든 도서관의 소장/대출 여부를 조회합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "대출 가능 여부 조회 성공"),
+            @ApiResponse(responseCode = "400", description = "ISBN이 누락됨")
+    })
+    @GetMapping("/books/availability")
+    public ResponseEntity<ApiResponseDto<List<LibraryAvailabilityDto>>> getBookAvailability(
+            @RequestParam("isbn13") String isbn13,
+            @RequestHeader("X-User-Id") Long userId // TODO: 인증 기능으로 교체
+    ) {
+        List<LibraryAvailabilityDto> availabilityList = bookService.checkBookAvailability(userId, isbn13);
+
+        return ResponseEntity.ok(ApiResponseDto.<List<LibraryAvailabilityDto>>builder()
+                .status(HttpStatus.OK.value())
+                .body(availabilityList)
+                .message("도서 대출 가능 여부 조회 성공")
                 .build());
     }
 }
