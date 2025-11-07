@@ -1,7 +1,7 @@
 package com.readour.community.service;
 
 import com.readour.common.dto.FileResponseDto;
-import com.readour.common.entity.Book;
+import com.readour.community.entity.Book;
 import com.readour.common.entity.FileAsset;
 import com.readour.common.entity.User;
 import com.readour.common.exception.CustomException;

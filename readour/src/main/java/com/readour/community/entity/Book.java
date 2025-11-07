@@ -1,7 +1,9 @@
-package com.readour.common.entity;
+package com.readour.community.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 import java.time.*;
 
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
@@ -23,6 +25,8 @@ public class Book {
     private String classNm;
     @Lob private String description;
     @Lob private String bookImageUrl;
+    @CreationTimestamp
     private LocalDateTime createdAt;
+    @UpdateTimestamp
     private LocalDateTime updatedAt;
 }

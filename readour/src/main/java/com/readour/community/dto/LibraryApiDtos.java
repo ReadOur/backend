@@ -52,7 +52,7 @@ public class LibraryApiDtos {
     }
     @Getter @Setter @NoArgsConstructor
     public static class DetailResponse {
-        private DetailResult detail;
+        private List<DetailResult> detail;
     }
     @Getter @Setter @NoArgsConstructor
     public static class DetailResult {
@@ -66,6 +66,8 @@ public class LibraryApiDtos {
         private String authors;
         @JsonProperty("publisher")
         private String publisher;
+        @JsonProperty("publication_date")
+        private String publicationDate;
         @JsonProperty("publication_year")
         private String publicationYear;
         @JsonProperty("isbn")

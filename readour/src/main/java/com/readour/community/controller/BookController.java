@@ -2,32 +2,25 @@ package com.readour.community.controller;
 
 import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
-import com.readour.common.enums.ErrorCode;
-import com.readour.common.exception.CustomException;
 import com.readour.community.dto.*;
-import com.readour.common.entity.Book;
+import com.readour.community.entity.Book;
 import com.readour.community.service.BookService;
 import com.readour.community.dto.LibraryAvailabilityDto;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.media.Content;
-import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
-import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
@@ -56,6 +49,28 @@ public class BookController {
                 .build());
     }
 
+    @Operation(summary = "DB 도서 상세 정보 조회",
+            description = "우리 DB에 저장된 (연결된) 도서의 상세 정보를 bookId로 조회합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "조회 성공",
+                    content = @Content(schema = @Schema(implementation = BookResponseDto.class))),
+            @ApiResponse(responseCode = "404", description = "DB에 해당 책이 없음 (Not Found)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+    })
+    @GetMapping("/books/{bookId}")
+    public ResponseEntity<ApiResponseDto<BookResponseDto>> getBookDetails(
+            @PathVariable Long bookId
+    ) {
+        Book bookEntity = bookService.getBookDetailsById(bookId);
+        BookResponseDto responseDto = BookResponseDto.fromEntity(bookEntity);
+
+        return ResponseEntity.ok(ApiResponseDto.<BookResponseDto>builder()
+                .status(HttpStatus.OK.value())
+                .body(responseDto)
+                .message("도서 상세 정보 조회 성공")
+                .build());
+    }
+
     @Operation(summary = "도서 정보 동기화 (DB 저장)",
             description = "ISBN으로 DB를 조회하고, 없으면 외부 API(#6)에서 상세 정보를 가져와 DB에 저장합니다.")
     @ApiResponses(value = {
@@ -71,29 +86,29 @@ public class BookController {
 
 
     @PostMapping("/books/sync")
-    public ResponseEntity<ApiResponseDto<Book>> syncBook(@RequestBody Map<String, String> payload) {
-        String isbn = payload.get("isbn");
-        if (isbn == null || isbn.isBlank()) {
-            throw new CustomException(ErrorCode.BAD_REQUEST, "ISBN is required");
-        }
+    public ResponseEntity<ApiResponseDto<BookResponseDto>> syncBook(
+            @Valid @RequestBody BookSyncRequestDto payload
+    ) {
+        String isbn = payload.getIsbn();
 
-        // DB에 이미 있는지 확인 (findOrCreateBookByIsbn이 이 로직을 포함함)
         boolean existsInDb = bookService.isBookInDb(isbn);
 
-        Book book = bookService.findOrCreateBookByIsbn(isbn);
+        Book bookEntity = bookService.findOrCreateBookByIsbn(isbn);
+
+        BookResponseDto responseDto = BookResponseDto.fromEntity(bookEntity);
 
         if (existsInDb) {
             // 이미 DB에 있었던 경우
-            return ResponseEntity.ok(ApiResponseDto.<Book>builder()
+            return ResponseEntity.ok(ApiResponseDto.<BookResponseDto>builder()
                     .status(HttpStatus.OK.value())
-                    .body(book)
+                    .body(responseDto)
                     .message("DB에서 도서 정보 조회 성공")
                     .build());
         } else {
             // API를 통해 새로 생성된 경우
-            return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponseDto.<Book>builder()
+            return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponseDto.<BookResponseDto>builder()
                     .status(HttpStatus.CREATED.value())
-                    .body(book)
+                    .body(responseDto)
                     .message("API에서 도서 정보를 가져와 DB에 저장 성공")
                     .build());
         }

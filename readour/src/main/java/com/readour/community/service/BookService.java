@@ -2,12 +2,14 @@ package com.readour.community.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.readour.common.entity.Book;
+import com.readour.community.entity.Book;
 import com.readour.common.entity.User;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.enums.Gender;
 import com.readour.common.exception.CustomException;
 import com.readour.community.dto.*;
+import com.readour.community.dto.AverageRatingProjection;
+import com.readour.community.dto.LibraryApiDtos.SearchDoc;
 import com.readour.community.entity.BookHighlight;
 import com.readour.community.entity.BookReview;
 import com.readour.community.entity.UserInterestedLibrary;
@@ -35,6 +37,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.Period;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -59,24 +63,20 @@ public class BookService {
     @Value("${library.api.base-url}")
     private String baseUrl;
 
-    /**
-     * 로컬 DB에서 도서명으로 책을 검색합니다.
-     */
+    // 로컬 DB에서 도서명으로 책을 검색합니다.
     @Transactional(readOnly = true)
     public Page<Book> searchBooksInDbByTitle(String title, Pageable pageable) {
         log.debug("Searching DB for title: {}", title);
         return bookRepository.findByBooknameContaining(title, pageable);
     }
 
-    /**
-     * (외부 API #16)
-     * 정보나루 API를 호출하여 도서를 검색합니다. (DB 저장 X)
-     * (Wrapper DTO 사용 O)
-     */
+
+    // 정보나루 API를 호출하여 도서를 검색합니다. (DB 저장 X)
     @Transactional(readOnly = true)
     public Page<BookSummaryDto> searchBooksFromApi(String keyword, Pageable pageable) {
         log.debug("Searching API for keyword: {}", keyword);
 
+        // 1. [API Search] 외부 API(#16) 호출
         URI uri = UriComponentsBuilder
                 .fromUriString(baseUrl + "/srchBooks")
                 .queryParam("authKey", apiKey)
@@ -101,9 +101,49 @@ public class BookService {
 
             LibraryApiDtos.SearchResponse response = wrapper.getResponse();
 
-            List<BookSummaryDto> bookSummaries = response.getDocs().stream()
-                    .map(LibraryApiDtos.SearchDocWrapper::getDoc) // SearchDocWrapper -> SearchDoc
-                    .map(BookSummaryDto::from)                   // SearchDoc -> BookSummaryDto
+            List<SearchDoc> apiDocs = response.getDocs().stream()
+                    .map(LibraryApiDtos.SearchDocWrapper::getDoc)
+                    .toList();
+
+            if (apiDocs.isEmpty()) {
+                return Page.empty(pageable);
+            }
+
+            // 2. [DB Book Fetch] API 결과의 ISBN으로 우리 DB 조회
+            List<String> isbns = apiDocs.stream()
+                    .map(SearchDoc::getIsbn13)
+                    .filter(isbn -> isbn != null && !isbn.isBlank())
+                    .toList();
+
+            Map<String, Book> existingBooksMap = Collections.emptyMap();
+            if (!isbns.isEmpty()) {
+                existingBooksMap = bookRepository.findByIsbn13In(isbns).stream()
+                        .collect(Collectors.toMap(Book::getIsbn13, Function.identity()));
+            }
+
+            // 3. [DB Rating Fetch] DB에 있는 책들의 bookId로 평점/리뷰 수 조회
+            Collection<Long> existingBookIds = existingBooksMap.values().stream()
+                    .map(Book::getBookId)
+                    .toList();
+
+            Map<Long, AverageRatingProjection> ratingInfoMap;
+            if (!existingBookIds.isEmpty()) {
+                ratingInfoMap = bookReviewRepository.findAverageRatingsByBookIds(existingBookIds).stream()
+                        .collect(Collectors.toMap(AverageRatingProjection::getBookId, Function.identity()));
+            } else {
+                ratingInfoMap = Collections.emptyMap();
+            }
+
+            // 4. [Merge] API 결과와 DB 데이터를 조합
+            Map<String, Book> finalExistingBooksMap = existingBooksMap;
+            List<BookSummaryDto> bookSummaries = apiDocs.stream()
+                    .map(doc -> {
+                        Book existingBook = finalExistingBooksMap.get(doc.getIsbn13());
+                        AverageRatingProjection ratingInfo = (existingBook != null)
+                                ? ratingInfoMap.get(existingBook.getBookId())
+                                : null;
+                        return BookSummaryDto.from(doc, existingBook, ratingInfo);
+                    })
                     .collect(Collectors.toList());
 
             return new PageImpl<>(bookSummaries, pageable, response.getNumFound());
@@ -114,10 +154,7 @@ public class BookService {
         }
     }
 
-    /**
-     * ISBN으로 로컬 DB를 먼저 조회하고, 없으면 API #6(상세조회)를 호출하여
-     * DB에 저장한 후 반환합니다.
-     */
+    // ISBN으로 로컬 DB를 먼저 조회하고, 없으면 API #6(상세조회)를 호출하여 DB에 저장한 후 반환합니다.
     @Transactional
     public Book findOrCreateBookByIsbn(String isbn13) {
         // 1. 로컬 DB에서 ISBN으로 책을 조회
@@ -141,10 +178,7 @@ public class BookService {
         return savedBook;
     }
 
-    /**
-     * 사용자 정보(성별, 연령)를 기반으로 인기대출도서 API(#3)를 호출합니다.
-     * (Wrapper DTO 사용 O)
-     */
+    // 사용자 정보(성별, 연령)를 기반으로 인기대출도서 API(#3)를 호출합니다.(Wrapper DTO 사용 O)
     @Transactional(readOnly = true)
     public Page<PopularBookDto> getPopularBooks(Long userId, Pageable pageable) {
         // 1. 사용자 정보 조회 (성별, 연령 확인용)
@@ -203,18 +237,20 @@ public class BookService {
         }
     }
 
-
-    /**
-     * [기존] DB에 책이 있는지 확인 (Controller용)
-     */
+    // DB에 책이 있는지 확인 (Controller용)
     @Transactional(readOnly = true)
     public boolean isBookInDb(String isbn13) {
         return bookRepository.findByIsbn13(isbn13).isPresent();
     }
 
-    /**
-     * API #6 호출 (Wrapper DTO 사용 X)
-     */
+    // DB에 저장된 도서 상세 정보 조회
+    @Transactional(readOnly = true)
+    public Book getBookDetailsById(Long bookId) {
+        return bookRepository.findById(bookId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Book not found with id: " + bookId));
+    }
+
+    // API #6 호출 (Wrapper DTO 사용 X)
     private LibraryApiDtos.BookInfo fetchBookDetailsFromApi(String isbn13) {
         URI uri = UriComponentsBuilder
                 .fromUriString(baseUrl + "/srchDtlList")
@@ -229,15 +265,21 @@ public class BookService {
             String jsonResponse = restTemplate.getForObject(uri, String.class);
             log.info("External API Response JSON for detail [{}]: {}", isbn13, jsonResponse);
 
-            // [수정] Wrapper 없이 DetailResponse를 바로 파싱합니다. (500 에러 수정)
-            LibraryApiDtos.DetailResponse response = objectMapper.readValue(jsonResponse, LibraryApiDtos.DetailResponse.class);
+            // [1] DetailResponseWrapper.class 로 파싱합니다.
+            LibraryApiDtos.DetailResponseWrapper wrapper = objectMapper.readValue(jsonResponse, LibraryApiDtos.DetailResponseWrapper.class);
 
-            if (response == null || response.getDetail() == null || response.getDetail().getBook() == null) {
+            // [2] 수정된 DTO 구조(List)에 맞게 검증 로직을 수정합니다.
+            if (wrapper == null || wrapper.getResponse() == null ||
+                    wrapper.getResponse().getDetail() == null || // 리스트 자체가 null인지
+                    wrapper.getResponse().getDetail().isEmpty() || // 리스트가 비었는지
+                    wrapper.getResponse().getDetail().get(0).getBook() == null) // 첫 항목에 book이 있는지
+            {
                 log.warn("API response for detail is empty or malformed for isbn: {}", isbn13);
                 throw new CustomException(ErrorCode.NOT_FOUND, "API에서 도서 정보를 찾을 수 없습니다. ISBN: " + isbn13);
             }
 
-            return response.getDetail().getBook();
+            // [3] [3] "detail" 리스트의 첫 번째 항목(get(0))에서 book 정보를 반환합니다.
+            return wrapper.getResponse().getDetail().get(0).getBook();
 
         } catch (JsonProcessingException e) {
             log.error("Failed to parse book detail from API. ISBN: " + isbn13, e);
@@ -248,9 +290,7 @@ public class BookService {
         }
     }
 
-    /**
-     * PI DTO -> 엔티티 변환
-     */
+    // PI DTO -> 엔티티 변환
     private Book mapApiDtoToBookEntity(LibraryApiDtos.BookInfo apiBook) {
         Integer publicationYear = null;
         try {
@@ -261,6 +301,24 @@ public class BookService {
             log.warn("Could not parse publicationYear: {}", apiBook.getPublicationYear());
         }
 
+        // publicationDate 파싱 로직
+        LocalDate publicationDate = null;
+        try {
+            // "YYYY-MM-DD" 형식을 파싱 시도
+            if (apiBook.getPublicationDate() != null && apiBook.getPublicationDate().length() >= 10) {
+                publicationDate = LocalDate.parse(apiBook.getPublicationDate().substring(0, 10));
+            }
+            // 파싱 실패 시, "YYYY"라도 파싱해서 해당 년도의 1월 1일로 저장
+            else if (publicationYear != null) {
+                publicationDate = LocalDate.of(publicationYear, 1, 1);
+            }
+        } catch (Exception e) {
+            log.warn("Could not parse publicationDate: {}", apiBook.getPublicationDate());
+            if (publicationYear != null) { // 파싱 실패 시 Year 기준으로 재시도
+                publicationDate = LocalDate.of(publicationYear, 1, 1);
+            }
+        }
+
         return Book.builder()
                 .isbn10(apiBook.getIsbn())
                 .isbn13(apiBook.getIsbn13())
@@ -268,6 +326,7 @@ public class BookService {
                 .authors(apiBook.getAuthors())
                 .publisher(apiBook.getPublisher())
                 .publicationYear(publicationYear)
+                .publicationDate(publicationDate)
                 .classNo(apiBook.getClassNo())
                 .classNm(apiBook.getClassNm())
                 .description(apiBook.getDescription())
@@ -277,9 +336,7 @@ public class BookService {
                 .build();
     }
 
-    /**
-     * ReadOur Gender(MALE, FEMALE)를 API 코드(0, 1)로 변환
-     */
+    // ReadOur Gender(MALE, FEMALE)를 API 코드(0, 1)로 변환
     private String mapGenderToApiCode(Gender gender) {
         if (gender == null) {
             return null;
@@ -294,9 +351,7 @@ public class BookService {
         }
     }
 
-    /**
-     * 생년월일을 API 연령 코드(0, 6, 8, 14, 20, 30...)로 변환
-     */
+    // 생년월일을 API 연령 코드(0, 6, 8, 14, 20, 30...)로 변환
     private String mapBirthDateToApiAgeCode(LocalDate birthDate) {
         if (birthDate == null) {
             return null;
