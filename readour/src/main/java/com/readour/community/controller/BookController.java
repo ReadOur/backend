@@ -5,6 +5,7 @@ import com.readour.common.dto.ErrorResponseDto;
 import com.readour.community.dto.*;
 import com.readour.community.entity.Book;
 import com.readour.community.service.BookService;
+import com.readour.community.service.CommunityService;
 import com.readour.community.dto.LibraryAvailabilityDto;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -29,6 +30,7 @@ import java.util.Map;
 public class BookController {
 
     private final BookService bookService;
+    private final CommunityService communityService;
 
     // (SD-26: 도서 검색)
     @Operation(summary = "도서 검색 (외부 API)",
@@ -304,6 +306,28 @@ public class BookController {
                 .status(HttpStatus.OK.value())
                 .body(availabilityList)
                 .message("도서 대출 가능 여부 조회 성공")
+                .build());
+    }
+
+    // 특정 책(bookId)에 연관된 게시글 목록 조회
+    @Operation(summary = "책 연관 게시글 목록 조회",
+            description = "특정 책(bookId)에 연결된 게시글(리뷰, 토론 등) 목록을 조회합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "연관 게시글 조회 성공",
+                    content = @Content(schema = @Schema(implementation = Page.class))) // Page<PostSummaryDto>
+    })
+    @GetMapping("/books/{bookId}/posts")
+    public ResponseEntity<ApiResponseDto<Page<PostSummaryDto>>> getPostsByBookId(
+            @PathVariable Long bookId,
+            @RequestHeader(value = "X-User-Id", required = false) Long userId, // 비회원 조회 가능
+            @ParameterObject Pageable pageable
+    ) {
+        Page<PostSummaryDto> postPage = communityService.getPostListByBookId(bookId, userId, pageable);
+
+        return ResponseEntity.ok(ApiResponseDto.<Page<PostSummaryDto>>builder()
+                .status(HttpStatus.OK.value())
+                .body(postPage)
+                .message("책 연관 게시글 목록 조회 성공")
                 .build());
     }
 }

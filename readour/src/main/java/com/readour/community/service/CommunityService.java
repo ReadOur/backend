@@ -70,6 +70,27 @@ public class CommunityService {
         return new PageImpl<>(summaryDtos, postPage.getPageable(), postPage.getTotalElements());
     }
 
+    // bookId로 게시글 목록 조회
+    @Transactional(readOnly = true)
+    public Page<PostSummaryDto> getPostListByBookId(Long bookId, Long currentUserId, Pageable pageable) {
+        log.debug("getPostListByBookId called. bookId: {}", bookId);
+
+        // 1. Repository에서 Paging 조회
+        Page<Post> postPage = postRepository.findAllByBookBookIdAndIsDeletedFalse(bookId, pageable);
+
+        // 2. PostSummaryDto로 변환 (getPostList 로직 재사용)
+        List<PostSummaryDto> summaryDtos = postPage.getContent().stream()
+                .map(post -> {
+                    Long likeCount = postLikeRepository.countByIdPostId(post.getPostId());
+                    Long commentCount = commentRepository.countByPostIdAndIsDeletedFalse(post.getPostId());
+                    Boolean isLiked = (currentUserId == null) ? false : postLikeRepository.existsByIdPostIdAndIdUserId(post.getPostId(), currentUserId);
+                    return PostSummaryDto.fromEntity(post, likeCount, commentCount, isLiked);
+                })
+                .collect(Collectors.toList());
+
+        return new PageImpl<>(summaryDtos, postPage.getPageable(), postPage.getTotalElements());
+    }
+
     @Transactional(readOnly = true)
     public Page<PostSummaryDto> searchPosts(PostSearchType searchType, String keyword, Pageable pageable, Long currentUserId) {
         log.debug("searchPosts called. Type: {}, Keyword: {}", searchType, keyword);
