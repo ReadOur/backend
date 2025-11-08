@@ -21,6 +21,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api")
@@ -49,53 +50,22 @@ public class BookController {
                 .build());
     }
 
-    @Operation(summary = "DB 도서 상세 정보 조회",
-            description = "우리 DB에 저장된 (연결된) 도서의 상세 정보를 bookId로 조회합니다.")
+    @Operation(summary = "도서 상세 조회 (DB 저장)",
+            description = "ISBN으로 DB를 조회하고, 없으면 외부 API(#6)에서 상세 정보를 가져와 DB에 저장 후 반환합니다.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "조회 성공",
-                    content = @Content(schema = @Schema(implementation = BookResponseDto.class))),
-            @ApiResponse(responseCode = "404", description = "DB에 해당 책이 없음 (Not Found)",
-                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+            @ApiResponse(responseCode = "200", description = "DB에서 도서 정보 조회 성공 (평점 포함)"),
+            @ApiResponse(responseCode = "201", description = "API에서 도서 정보를 가져와 DB에 저장 성공 (평점 포함)"),
+            @ApiResponse(responseCode = "404", description = "API에서도 도서 정보를 찾을 수 없음"),
+            @ApiResponse(responseCode = "502", description = "외부 API 호출 실패")
     })
-    @GetMapping("/books/{bookId}")
-    public ResponseEntity<ApiResponseDto<BookResponseDto>> getBookDetails(
-            @PathVariable Long bookId
+    @GetMapping("/books/isbn/{isbn13}")
+    public ResponseEntity<ApiResponseDto<BookResponseDto>> getBookDetailsByIsbn(
+            @PathVariable String isbn13,
+            @RequestHeader(value = "X-User-Id", required = false) Long userId
     ) {
-        Book bookEntity = bookService.getBookDetailsById(bookId);
-        BookResponseDto responseDto = BookResponseDto.fromEntity(bookEntity);
+        boolean existsInDb = bookService.isBookInDb(isbn13);
 
-        return ResponseEntity.ok(ApiResponseDto.<BookResponseDto>builder()
-                .status(HttpStatus.OK.value())
-                .body(responseDto)
-                .message("도서 상세 정보 조회 성공")
-                .build());
-    }
-
-    @Operation(summary = "도서 정보 동기화 (DB 저장)",
-            description = "ISBN으로 DB를 조회하고, 없으면 외부 API(#6)에서 상세 정보를 가져와 DB에 저장합니다.")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "DB에서 도서 정보 조회 성공",
-                    content = @Content(schema = @Schema(implementation = void.class))),
-            @ApiResponse(responseCode = "201", description = "API에서 도서 정보를 가져와 DB에 저장 성공",
-                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class))),
-            @ApiResponse(responseCode = "400", description = "ISBN이 요청 본문에 누락됨",
-                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class))),
-            @ApiResponse(responseCode = "404", description = "API에서도 도서 정보를 찾을 수 없음",
-                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
-    })
-
-
-    @PostMapping("/books/sync")
-    public ResponseEntity<ApiResponseDto<BookResponseDto>> syncBook(
-            @Valid @RequestBody BookSyncRequestDto payload
-    ) {
-        String isbn = payload.getIsbn();
-
-        boolean existsInDb = bookService.isBookInDb(isbn);
-
-        Book bookEntity = bookService.findOrCreateBookByIsbn(isbn);
-
-        BookResponseDto responseDto = BookResponseDto.fromEntity(bookEntity);
+        BookResponseDto responseDto = bookService.findOrCreateBookByIsbn(isbn13, userId);
 
         if (existsInDb) {
             // 이미 DB에 있었던 경우
@@ -112,6 +82,51 @@ public class BookController {
                     .message("API에서 도서 정보를 가져와 DB에 저장 성공")
                     .build());
         }
+    }
+
+    @Operation(summary = "DB 도서 상세 정보 조회",
+            description = "우리 DB에 저장된 (연결된) 도서의 상세 정보를 bookId로 조회합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "조회 성공",
+                    content = @Content(schema = @Schema(implementation = BookResponseDto.class))),
+            @ApiResponse(responseCode = "404", description = "DB에 해당 책이 없음 (Not Found)",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+    })
+    @GetMapping("/books/{bookId}")
+    public ResponseEntity<ApiResponseDto<BookResponseDto>> getBookDetails(
+            @PathVariable Long bookId,
+            @RequestHeader(value = "X-User-Id", required = false) Long userId
+    ) {
+        BookResponseDto responseDto = bookService.getBookDetailsById(bookId, userId);
+
+        return ResponseEntity.ok(ApiResponseDto.<BookResponseDto>builder()
+                .status(HttpStatus.OK.value())
+                .body(responseDto)
+                .message("도서 상세 정보 조회 성공")
+                .build());
+    }
+
+    // 위시리스트 토글 API
+    @Operation(summary = "도서 위시리스트 토글",
+            description = "책 상세 페이지에서 위시리스트 버튼 클릭 시 호출됩니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "토글 성공. 'isWishlisted: true'는 아이템이 추가된 상태."),
+            @ApiResponse(responseCode = "404", description = "책을 찾을 수 없음",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+    })
+    @PostMapping("/books/{bookId}/wishlist")
+    public ResponseEntity<ApiResponseDto<Map<String, Boolean>>> toggleWishlist(
+            @PathVariable Long bookId,
+            @RequestHeader("X-User-Id") Long userId // (인증 필수)
+    ) {
+        boolean isWishlisted = bookService.toggleWishlist(bookId, userId);
+
+        ApiResponseDto<Map<String, Boolean>> response = ApiResponseDto.<Map<String, Boolean>>builder()
+                .status(HttpStatus.OK.value())
+                .body(Map.of("isWishlisted", isWishlisted))
+                .message(isWishlisted ? "위시리스트에 추가되었습니다." : "위시리스트에서 삭제되었습니다.")
+                .build();
+        return ResponseEntity.ok(response);
     }
 
     // (SD-27) 책 리뷰 작성

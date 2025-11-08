@@ -2,7 +2,6 @@ package com.readour.community.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.readour.community.entity.Book;
 import com.readour.common.entity.User;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.enums.Gender;
@@ -10,8 +9,12 @@ import com.readour.common.exception.CustomException;
 import com.readour.community.dto.*;
 import com.readour.community.dto.AverageRatingProjection;
 import com.readour.community.dto.LibraryApiDtos.SearchDoc;
+import com.readour.community.entity.Book;
 import com.readour.community.entity.BookHighlight;
 import com.readour.community.entity.BookReview;
+import com.readour.community.entity.BookWishlist;
+import com.readour.community.entity.BookWishlistId;
+import com.readour.community.repository.BookWishlistRepository;
 import com.readour.community.entity.UserInterestedLibrary;
 import com.readour.community.entity.UserInterestedLibraryId;
 import com.readour.community.repository.BookHighlightRepository;
@@ -54,6 +57,7 @@ public class BookService {
     private final BookReviewRepository bookReviewRepository;
     private final BookHighlightRepository bookHighlightRepository;
     private final UserInterestedLibraryRepository userInterestedLibraryRepository;
+    private final BookWishlistRepository bookWishlistRepository;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
 
@@ -156,26 +160,40 @@ public class BookService {
 
     // ISBN으로 로컬 DB를 먼저 조회하고, 없으면 API #6(상세조회)를 호출하여 DB에 저장한 후 반환합니다.
     @Transactional
-    public Book findOrCreateBookByIsbn(String isbn13) {
+    public BookResponseDto findOrCreateBookByIsbn(String isbn13, Long currentUserId) {
         // 1. 로컬 DB에서 ISBN으로 책을 조회
         Optional<Book> existingBook = bookRepository.findByIsbn13(isbn13);
+
+        Book bookEntity;
+
         if (existingBook.isPresent()) {
             log.debug("Book found in DB. isbn: {}", isbn13);
-            return existingBook.get();
+            bookEntity = existingBook.get();
+        } else {
+            // 2. DB에 없으면, 정보나루 API #6 (상세조회) 호출
+            log.debug("Book not in DB. Calling API #6 for isbn: {}", isbn13);
+            LibraryApiDtos.BookInfo apiBook = fetchBookDetailsFromApi(isbn13);
+
+            // 3. API 결과를 Book 엔티티로 변환
+            Book newBook = mapApiDtoToBookEntity(apiBook);
+
+            // 4. 새 책 정보를 DB에 저장
+            bookEntity = bookRepository.save(newBook);
+            log.info("New book saved to DB. bookId: {}, isbn: {}", bookEntity.getBookId(), isbn13);
         }
 
-        // 2. DB에 없으면, 정보나루 API #6 (상세조회) 호출
-        log.debug("Book not in DB. Calling API #6 for isbn: {}", isbn13);
-        LibraryApiDtos.BookInfo apiBook = fetchBookDetailsFromApi(isbn13);
+        // 5. 저장/조회된 bookId로 평점/리뷰 수 조회
+        AverageRatingProjection ratingInfo = bookReviewRepository.findAverageRatingByBookId(bookEntity.getBookId())
+                .orElse(null); // 리뷰가 없으면 null
 
-        // 3. API 결과를 Book 엔티티로 변환
-        Book newBook = mapApiDtoToBookEntity(apiBook);
+        // 6. 위시리스트 추가 여부 반환
+        boolean isWishlisted = false;
+        if (currentUserId != null) { // 비회원이 아닐 경우에만 조회
+            isWishlisted = bookWishlistRepository.existsByIdUserIdAndIdBookId(currentUserId, bookEntity.getBookId());
+        }
 
-        // 4. 새 책 정보를 DB에 저장
-        Book savedBook = bookRepository.save(newBook);
-        log.info("New book saved to DB. bookId: {}, isbn: {}", savedBook.getBookId(), isbn13);
-
-        return savedBook;
+        // 7. 최종 DTO로 변환하여 반환
+        return BookResponseDto.fromEntity(bookEntity, ratingInfo, isWishlisted);
     }
 
     // 사용자 정보(성별, 연령)를 기반으로 인기대출도서 API(#3)를 호출합니다.(Wrapper DTO 사용 O)
@@ -245,9 +263,22 @@ public class BookService {
 
     // DB에 저장된 도서 상세 정보 조회
     @Transactional(readOnly = true)
-    public Book getBookDetailsById(Long bookId) {
-        return bookRepository.findById(bookId)
+    public BookResponseDto getBookDetailsById(Long bookId, Long currentUserId) {
+        Book book = bookRepository.findById(bookId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Book not found with id: " + bookId));
+
+        // 2. 평점 정보 조회
+        AverageRatingProjection ratingInfo = bookReviewRepository.findAverageRatingByBookId(bookId)
+                .orElse(null); // 리뷰가 없으면 null
+
+        // 3. 위시리스트 상태 조회
+        boolean isWishlisted = false;
+        if (currentUserId != null) { // 비회원이 아닐 경우에만 조회
+            isWishlisted = bookWishlistRepository.existsByIdUserIdAndIdBookId(currentUserId, bookId);
+        }
+
+        // 3. DTO로 변환하여 반환
+        return BookResponseDto.fromEntity(book, ratingInfo, isWishlisted);
     }
 
     // API #6 호출 (Wrapper DTO 사용 X)
@@ -364,6 +395,32 @@ public class BookService {
         if (age <= 49) return "40"; // 40: 40대
         if (age <= 59) return "50"; // 50: 50대
         return "60"; // 60: 60세 이상
+    }
+
+    // 위시리스트 토글
+    @Transactional
+    public boolean toggleWishlist(Long bookId, Long userId) {
+        // 1. 책 존재 여부 확인
+        if (!bookRepository.existsById(bookId)) {
+            throw new CustomException(ErrorCode.NOT_FOUND, "Book not found with id: " + bookId);
+        }
+
+        // 2. PostLike와 동일한 토글 로직
+        BookWishlistId wishlistId = new BookWishlistId(userId, bookId);
+        Optional<BookWishlist> existingWish = bookWishlistRepository.findById(wishlistId);
+
+        if (existingWish.isPresent()) {
+            // 이미 있으면 삭제 (해제)
+            bookWishlistRepository.deleteById(wishlistId);
+            log.debug("Wishlist item removed for bookId={}, userId={}", bookId, userId);
+            return false; // 위시리스트에서 해제됨
+        } else {
+            // 없으면 추가 (등록)
+            BookWishlist newWish = BookWishlist.builder().id(wishlistId).build();
+            bookWishlistRepository.save(newWish);
+            log.debug("Wishlist item added for bookId={}, userId={}", bookId, userId);
+            return true; // 위시리스트에 추가됨
+        }
     }
 
     // (SD-27) 책 리뷰 작성

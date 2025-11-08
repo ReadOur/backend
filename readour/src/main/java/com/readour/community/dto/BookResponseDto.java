@@ -1,6 +1,7 @@
 package com.readour.community.dto;
 
 import com.readour.community.entity.Book;
+import com.readour.community.dto.AverageRatingProjection;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Builder;
 import lombok.Getter;
@@ -34,7 +35,16 @@ public class BookResponseDto {
     @Schema(description = "책 표지 이미지 URL", example = "http://image.aladin.co.kr/...")
     private String bookImageUrl;
 
-    public static BookResponseDto fromEntity(Book book) {
+    @Schema(description = "평균 평점 (리뷰가 없으면 null)", example = "4.5")
+    private Double averageRating;
+
+    @Schema(description = "리뷰 수", example = "15")
+    private Long reviewCount;
+
+    @Schema(description = "현재 사용자가 위시리스트에 추가했는지 여부", example = "true")
+    private Boolean isWishlisted;
+
+    public static BookResponseDto fromEntity(Book book, AverageRatingProjection ratingInfo, boolean isWishlisted) {
         return BookResponseDto.builder()
                 .bookId(book.getBookId())
                 .isbn13(book.getIsbn13())
@@ -44,6 +54,9 @@ public class BookResponseDto {
                 .publicationYear(book.getPublicationYear())
                 .description(book.getDescription())
                 .bookImageUrl(book.getBookImageUrl())
+                .averageRating(ratingInfo != null ? ratingInfo.getAverageRating() : null)
+                .reviewCount(ratingInfo != null ? ratingInfo.getReviewCount() : 0L)
+                .isWishlisted(isWishlisted)
                 .build();
     }
 }
