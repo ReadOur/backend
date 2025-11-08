@@ -1,6 +1,5 @@
 package com.readour.community.entity;
 
-import com.readour.common.entity.Book;
 import com.readour.common.entity.User;
 import com.readour.community.enums.PostCategory;
 import jakarta.persistence.*;

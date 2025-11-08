@@ -10,5 +10,6 @@ import java.time.*;
 public class UserInterestedLibrary {
     @Id private Long userId;
     @Id private String libraryCode;
+    private String libraryName;
     private LocalDateTime createdAt;
 }

@@ -17,7 +17,7 @@ import java.util.Optional;
 @Repository
 public interface PostRepository extends JpaRepository<Post, Long>, JpaSpecificationExecutor<Post> {
 
-    List<Post> findByUser_Id(Long userId);
+    Page<Post> findByUserIdAndIsDeletedFalse(Long userId, Pageable pageable);
     @Modifying
     @Query("UPDATE Post p SET p.hit = p.hit + 1 WHERE p.postId = :postId")
     void incrementHit(@Param("postId") Long postId);
@@ -25,4 +25,5 @@ public interface PostRepository extends JpaRepository<Post, Long>, JpaSpecificat
     Page<Post> findAllByIsDeletedFalse(Pageable pageable);
     Page<Post> findAllByCategoryAndIsDeletedFalse(PostCategory category, Pageable pageable);
     Optional<Post> findByPostIdAndIsDeletedFalse(Long postId);
+    Page<Post> findAllByBookBookIdAndIsDeletedFalse(Long bookId, Pageable pageable);
 }

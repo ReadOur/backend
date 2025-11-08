@@ -1,6 +1,6 @@
 package com.readour.community.service;
 
-import com.readour.common.entity.Book;
+import com.readour.community.entity.Book;
 import com.readour.common.entity.User;
 import com.readour.community.entity.Post;
 import com.readour.community.enums.PostSearchType;

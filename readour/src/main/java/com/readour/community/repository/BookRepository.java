@@ -1,11 +1,13 @@
 package com.readour.community.repository;
 
-import com.readour.common.entity.Book;
+import com.readour.community.entity.Book;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -18,9 +20,13 @@ public interface BookRepository extends JpaRepository<Book, Long> {
     Optional<Book> findByIsbn13(String isbn13);
 
     /**
-     * [신규]
      * DB에 저장된 도서 중, 도서명(bookname)에 키워드가 포함된 도서를 검색합니다.
      */
     Page<Book> findByBooknameContaining(String title, Pageable pageable);
+
+    /**
+     * 여러 ISBN으로 DB에 이미 저장된 책들을 조회 (캐싱 확인용)
+     */
+    List<Book> findByIsbn13In(Collection<String> isbns);
 }
 
