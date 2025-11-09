@@ -92,9 +92,15 @@ public class CommunityService {
     }
 
     @Transactional(readOnly = true)
-    public Page<PostSummaryDto> searchPosts(PostSearchType searchType, String keyword, Pageable pageable, Long currentUserId) {
-        log.debug("searchPosts called. Type: {}, Keyword: {}", searchType, keyword);
-        Specification<Post> spec = postSpecification.search(searchType, keyword);
+    public Page<PostSummaryDto> searchPosts(
+            PostSearchType searchType,
+            String keyword,
+            PostCategory category,
+            Pageable pageable,
+            Long currentUserId
+    ) {
+        log.debug("searchPosts called. Type: {}, Keyword: {}, Category: {}", searchType, keyword, category);
+        Specification<Post> spec = postSpecification.search(searchType, keyword, category);
         Page<Post> postPage = postRepository.findAll(spec, pageable);
 
         return postPage.map(post -> {
@@ -151,7 +157,7 @@ public class CommunityService {
         Post post = postRepository.findByPostIdAndIsDeletedFalse(postId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Post not found with id: " + postId));
 
-        postRepository.incrementHit(postId);
+        // postRepository.incrementHit(postId);
 
         List<CommentResponseDto> comments = commentRepository.findAllByPostId(postId)
                 .stream()
@@ -166,6 +172,18 @@ public class CommunityService {
         List<FileResponseDto> attachments = mapToResponses(fileAssetService.getLinkedAssets("POST", postId));
 
         return PostResponseDto.fromEntity(post, comments, likeCount, commentCount, isLiked, attachments);
+    }
+
+    @Transactional
+    public void incrementPostHit(Long postId) {
+        // 삭제되지 않은 게시글인지 확인 (Soft Delete 검사)
+        if (postRepository.findByPostIdAndIsDeletedFalse(postId).isPresent()) {
+            postRepository.incrementHit(postId);
+            log.debug("Post hit incremented for postId: {}", postId);
+        } else {
+            // 게시글이 없거나 삭제된 경우, 조용히 무시 (에러 불필요)
+            log.warn("Attempted to increment hit for non-existent or deleted post: {}", postId);
+        }
     }
 
     @Transactional
