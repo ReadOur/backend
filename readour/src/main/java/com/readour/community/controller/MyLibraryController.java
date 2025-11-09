@@ -2,10 +2,7 @@ package com.readour.community.controller;
 
 import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
-import com.readour.community.dto.MyHighlightDto;
-import com.readour.community.dto.MyLibraryResponseDto;
-import com.readour.community.dto.MyReviewDto;
-import com.readour.community.dto.MyWishlistDto;
+import com.readour.community.dto.*;
 import com.readour.community.service.MyLibraryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -74,12 +71,12 @@ public class MyLibraryController {
             @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음")
     })
     @GetMapping("/users/{userId}/library/wishlist")
-    public ResponseEntity<ApiResponseDto<Page<MyWishlistDto>>> getUserWishlist(
+    public ResponseEntity<ApiResponseDto<MyLibraryWishlistPageDto>> getUserWishlist(
             @PathVariable Long userId,
             @ParameterObject @PageableDefault(size = 10, sort = "createdAt") Pageable pageable
     ) {
-        Page<MyWishlistDto> wishlistPage = myLibraryService.getWishlist(userId, pageable);
-        return ResponseEntity.ok(ApiResponseDto.<Page<MyWishlistDto>>builder()
+        MyLibraryWishlistPageDto wishlistPage = myLibraryService.getWishlist(userId, pageable);
+        return ResponseEntity.ok(ApiResponseDto.<MyLibraryWishlistPageDto>builder()
                 .status(HttpStatus.OK.value())
                 .body(wishlistPage)
                 .message("사용자 위시리스트 조회 성공")
@@ -93,12 +90,12 @@ public class MyLibraryController {
             @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음")
     })
     @GetMapping("/users/{userId}/library/reviews")
-    public ResponseEntity<ApiResponseDto<Page<MyReviewDto>>> getUserReviews(
+    public ResponseEntity<ApiResponseDto<MyLibraryReviewPageDto>> getUserReviews(
             @PathVariable Long userId,
             @ParameterObject @PageableDefault(size = 10, sort = "createdAt") Pageable pageable
     ) {
-        Page<MyReviewDto> reviewPage = myLibraryService.getReviews(userId, pageable);
-        return ResponseEntity.ok(ApiResponseDto.<Page<MyReviewDto>>builder()
+        MyLibraryReviewPageDto reviewPage = myLibraryService.getReviews(userId, pageable); // 👈 [3]
+        return ResponseEntity.ok(ApiResponseDto.<MyLibraryReviewPageDto>builder()
                 .status(HttpStatus.OK.value())
                 .body(reviewPage)
                 .message("사용자 리뷰 목록 조회 성공")
@@ -112,12 +109,12 @@ public class MyLibraryController {
             @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음")
     })
     @GetMapping("/users/{userId}/library/highlights")
-    public ResponseEntity<ApiResponseDto<Page<MyHighlightDto>>> getUserHighlights(
+    public ResponseEntity<ApiResponseDto<MyLibraryHighlightPageDto>> getUserHighlights(
             @PathVariable Long userId,
             @ParameterObject @PageableDefault(size = 10, sort = "createdAt") Pageable pageable
     ) {
-        Page<MyHighlightDto> highlightPage = myLibraryService.getHighlights(userId, pageable);
-        return ResponseEntity.ok(ApiResponseDto.<Page<MyHighlightDto>>builder()
+        MyLibraryHighlightPageDto highlightPage = myLibraryService.getHighlights(userId, pageable); // 👈 [3]
+        return ResponseEntity.ok(ApiResponseDto.<MyLibraryHighlightPageDto>builder()
                 .status(HttpStatus.OK.value())
                 .body(highlightPage)
                 .message("사용자 하이라이트 목록 조회 성공")

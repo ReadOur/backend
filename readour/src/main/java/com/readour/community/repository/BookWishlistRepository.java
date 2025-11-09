@@ -10,5 +10,5 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface BookWishlistRepository extends JpaRepository<BookWishlist, BookWishlistId> {
     boolean existsByIdUserIdAndIdBookId(Long userId, Long bookId);
-    Page<BookWishlist> findAllById_UserId(Long userId, Pageable pageable);
+    Page<BookWishlist> findAllByIdUserId(Long userId, Pageable pageable);
 }
