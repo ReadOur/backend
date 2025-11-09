@@ -42,10 +42,11 @@ public class CommunityController {
     public ResponseEntity<ApiResponseDto<Page<PostSummaryDto>>> searchPosts(
             @RequestParam PostSearchType type,
             @RequestParam String keyword,
+            @RequestParam(required = false) PostCategory category,
             @ParameterObject Pageable pageable
     ) {
         Long currentUserId = 1L; // TODO: Get authenticated user ID. 비회원은 null
-        Page<PostSummaryDto> postPage = communityService.searchPosts(type, keyword, pageable, currentUserId);
+        Page<PostSummaryDto> postPage = communityService.searchPosts(type, keyword, category, pageable, currentUserId);
 
         ApiResponseDto<Page<PostSummaryDto>> response = ApiResponseDto.<Page<PostSummaryDto>>builder()
                 .status(HttpStatus.OK.value())
@@ -116,6 +117,23 @@ public class CommunityController {
                 .status(HttpStatus.OK.value())
                 .body(postDetail)
                 .message("게시글 상세 조회 성공")
+                .build();
+        return ResponseEntity.ok(response);
+    }
+
+    // 게시글 조회수 증가 API
+    @Operation(summary = "게시글 조회수 증가",
+            description = "프론트엔드에서 게시글 상세 페이지 진입 시 1회만 호출해야 합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "조회수 증가 성공 (게시글이 없어도 200 반환)")
+    })
+    @PostMapping("/posts/{postId}/view")
+    public ResponseEntity<ApiResponseDto<Void>> incrementPostView(@PathVariable Long postId) {
+        communityService.incrementPostHit(postId);
+
+        ApiResponseDto<Void> response = ApiResponseDto.<Void>builder()
+                .status(HttpStatus.OK.value())
+                .message("조회수가 갱신되었습니다.")
                 .build();
         return ResponseEntity.ok(response);
     }
