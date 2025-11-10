@@ -21,7 +21,7 @@ import com.readour.community.repository.BookHighlightRepository;
 import com.readour.community.repository.BookRepository;
 import com.readour.community.repository.BookReviewRepository;
 import com.readour.community.repository.UserInterestedLibraryRepository;
-import com.readour.community.repository.UserRepository;
+import com.readour.common.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;

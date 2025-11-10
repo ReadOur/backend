@@ -8,7 +8,7 @@ import com.readour.common.exception.CustomException;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.service.FileAssetService;
 import com.readour.community.repository.BookRepository;
-import com.readour.community.repository.UserRepository;
+import com.readour.common.repository.UserRepository;
 import com.readour.community.dto.*;
 import com.readour.community.entity.Comment;
 import com.readour.community.entity.Post;

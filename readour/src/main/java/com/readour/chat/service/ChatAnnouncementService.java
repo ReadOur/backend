@@ -19,7 +19,7 @@ import com.readour.common.entity.User;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.enums.Role;
 import com.readour.common.exception.CustomException;
-import com.readour.community.repository.UserRepository;
+import com.readour.common.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;

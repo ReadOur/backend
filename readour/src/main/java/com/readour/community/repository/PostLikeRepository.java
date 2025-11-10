@@ -2,6 +2,8 @@ package com.readour.community.repository;
 
 import com.readour.community.entity.PostLike;
 import com.readour.community.entity.PostLikeId;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import java.util.Optional;
@@ -12,4 +14,5 @@ public interface PostLikeRepository extends JpaRepository<PostLike, PostLikeId> 
     Long countByIdPostId(Long postId);
     void deleteById(PostLikeId id);
     Boolean existsByIdPostIdAndIdUserId(Long postId, Long userId);
+    Page<PostLike> findAllByIdUserId(Long userId, Pageable pageable);
 }

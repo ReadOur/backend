@@ -21,7 +21,7 @@ import com.readour.common.enums.Role;
 import com.readour.common.exception.CustomException;
 import com.readour.common.repository.CalendarEventRepository;
 import com.readour.common.repository.CalendarRepository;
-import com.readour.community.repository.UserRepository;
+import com.readour.common.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
