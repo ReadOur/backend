@@ -3,6 +3,7 @@ package com.readour.community.service;
 import com.readour.common.entity.User;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.exception.CustomException;
+import com.readour.common.repository.UserRepository;
 import com.readour.community.dto.*;
 import com.readour.community.entity.Comment;
 import com.readour.community.entity.Post;
@@ -23,7 +24,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
