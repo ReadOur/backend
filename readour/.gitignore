@@ -39,3 +39,4 @@ out/
 # Sensitive configuration
 .env
 readour/src/main/resources/application.properties.env
+src/main/resources/application.properties
