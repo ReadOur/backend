@@ -7,8 +7,12 @@ import org.springframework.http.HttpStatus;
 public enum ErrorCode {
     BAD_REQUEST(400, "잘못된 요청입니다.", HttpStatus.BAD_REQUEST),
     UNAUTHORIZED(401, "인증이 필요합니다.", HttpStatus.UNAUTHORIZED),
+    INVALID_TOKEN(401, "유효하지 않은 토큰입니다.", HttpStatus.UNAUTHORIZED),
+    TOKEN_EXPIRED(401, "만료된 토큰입니다.", HttpStatus.UNAUTHORIZED),
     FORBIDDEN(403, "접근이 거부되었습니다.", HttpStatus.FORBIDDEN),
+    USER_INACTIVE(403, "비활성화된 계정입니다.", HttpStatus.FORBIDDEN),
     NOT_FOUND(404, "리소스를 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
+    REFRESH_TOKEN_NOT_FOUND(404, "리프레시 토큰을 찾을 수 없습니다.", HttpStatus.NOT_FOUND),
     METHOD_NOT_ALLOWED(405, "허용되지 않은 메서드입니다.", HttpStatus.METHOD_NOT_ALLOWED),
     CONFLICT(409, "요청이 충돌했습니다.", HttpStatus.CONFLICT),
     UNPROCESSABLE_ENTITY(422, "요청을 처리할 수 없습니다.", HttpStatus.UNPROCESSABLE_ENTITY),
