@@ -43,6 +43,24 @@ public class FileAssetService {
     @Transactional
     public FileAsset upload(MultipartFile file, Long ownerUserId) {
         validateBucket();
+        return storeFile(file, ownerUserId);
+    }
+
+    @Transactional
+    public List<FileAsset> uploadAll(List<MultipartFile> files, Long ownerUserId) {
+        validateBucket();
+        if (CollectionUtils.isEmpty(files)) {
+            throw new CustomException(ErrorCode.BAD_REQUEST, "업로드할 파일이 없습니다.");
+        }
+
+        List<FileAsset> uploaded = new ArrayList<>(files.size());
+        for (MultipartFile file : files) {
+            uploaded.add(storeFile(file, ownerUserId));
+        }
+        return uploaded;
+    }
+
+    private FileAsset storeFile(MultipartFile file, Long ownerUserId) {
         if (file == null || file.isEmpty()) {
             throw new CustomException(ErrorCode.BAD_REQUEST, "업로드할 파일이 없습니다.");
         }
