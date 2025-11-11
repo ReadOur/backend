@@ -8,6 +8,7 @@ import com.readour.common.exception.CustomException;
 import com.readour.common.service.FileAssetService;
 import com.readour.common.service.FileDownload;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -23,6 +24,9 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.util.UriUtils;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 @RestController
 @RequiredArgsConstructor
@@ -35,11 +39,16 @@ public class FileController {
     @Operation(summary = "파일 업로드 / 구현 및 테스트 함 / targetType : POST or CHAT_ROOM, targetId는 해당 게시글 또는 채팅방 / POSTMAN 테스트")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "파일 업로드 성공",
-                    content = @Content(schema = @Schema(implementation = FileResponseDto.class)))
+                    content = @Content(array = @ArraySchema(schema = @Schema(implementation = FileResponseDto.class))))
     })
-    public ResponseEntity<ApiResponseDto<FileResponseDto>> upload(
-            @RequestPart("file")
-            @Schema(type = "string", format = "binary", description = "업로드할 파일") MultipartFile file,
+    public ResponseEntity<ApiResponseDto<List<FileResponseDto>>> upload(
+            @RequestPart(value = "file", required = false)
+            @Schema(type = "string", format = "binary", description = "단일 업로드 파일") MultipartFile file,
+
+            @RequestPart(value = "files", required = false)
+            @Schema(description = "다건 업로드 파일 목록", type = "array",
+                    implementation = MultipartFile.class)
+            List<MultipartFile> files,
 
             @RequestHeader(value = "X-User-Id")
             Long userId,
@@ -50,13 +59,29 @@ public class FileController {
             @RequestParam(value = "targetId")
             Long targetId
     ) {
-        FileAsset uploaded = fileAssetService.upload(file, userId);
-        if (StringUtils.hasText(targetType) && targetId != null) {
-            fileAssetService.linkFile(uploaded.getFileId(), targetType, targetId);
+        List<MultipartFile> uploadTargets = new ArrayList<>();
+        if (files != null) {
+            files.stream()
+                    .filter(Objects::nonNull)
+                    .forEach(uploadTargets::add);
+        }
+        if (file != null) {
+            uploadTargets.add(file);
+        }
+        if (uploadTargets.isEmpty()) {
+            throw new CustomException(ErrorCode.BAD_REQUEST, "업로드할 파일이 없습니다.");
         }
 
-        FileResponseDto body = fileAssetService.toResponse(uploaded);
-        ApiResponseDto<FileResponseDto> response = ApiResponseDto.<FileResponseDto>builder()
+        List<FileAsset> uploaded = fileAssetService.uploadAll(uploadTargets, userId);
+        if (StringUtils.hasText(targetType) && targetId != null) {
+            uploaded.forEach(asset -> fileAssetService.linkFile(asset.getFileId(), targetType, targetId));
+        }
+
+        List<FileResponseDto> body = uploaded.stream()
+                .map(fileAssetService::toResponse)
+                .toList();
+
+        ApiResponseDto<List<FileResponseDto>> response = ApiResponseDto.<List<FileResponseDto>>builder()
                 .status(200)
                 .body(body)
                 .message("파일을 업로드했습니다.")
