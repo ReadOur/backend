@@ -1,4 +1,6 @@
+/*
 package com.readour.community.service;
+
 
 import com.readour.common.entity.User;
 import com.readour.common.enums.ErrorCode;
@@ -8,7 +10,6 @@ import com.readour.community.dto.*;
 import com.readour.community.entity.Comment;
 import com.readour.community.entity.Post;
 import com.readour.community.entity.PostLike;
-import com.readour.community.enums.PostCategory;
 import com.readour.community.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -33,13 +34,14 @@ public class MyPageService {
     private final CommentRepository commentRepository;
     private final PostLikeRepository postLikeRepository;
     private final RecruitmentMemberRepository recruitmentMemberRepository;
+    private final CommunityService communityService;
 
     private static final int PREVIEW_SIZE = 5;
     private static final Sort DESC_BY_CREATED = Sort.by(Sort.Direction.DESC, "createdAt");
 
     /**
      * 마이페이지 미리보기 데이터 조회
-     */
+     *//*
     public MyPageResponseDto getMyPageData(Long userId) {
         User user = validateAndGetUser(userId);
 
@@ -56,20 +58,20 @@ public class MyPageService {
 
     /**
      * 내가 쓴 게시글 페이징 조회
-     */
+     *//*
     public MyPagePostsPageDto getMyPosts(Long userId, Pageable pageable) {
         User user = validateAndGetUser(userId);
         Page<Post> postPage = postRepository.findByUserIdAndIsDeletedFalse(userId, pageable);
 
         // Post -> PostSummaryDto 변환
-        Page<PostSummaryDto> postDtoPage = convertToPostSummaryPage(postPage, userId);
+        Page<PostSummaryDto> postDtoPage = communityService.convertToPostSummaryPage(postPage, userId);
 
         return MyPagePostsPageDto.from(user, postDtoPage);
     }
 
     /**
      * 내가 쓴 댓글 페이징 조회
-     */
+     *//*
     public MyPageCommentsPageDto getMyComments(Long userId, Pageable pageable) {
         User user = validateAndGetUser(userId);
         // 1. 내 댓글 조회
@@ -89,6 +91,7 @@ public class MyPageService {
     /**
      * 내가 좋아요 누른 글 페이징 조회
      */
+/*
     public MyPageLikedPostsPageDto getLikedPosts(Long userId, Pageable pageable) {
         User user = validateAndGetUser(userId);
         // 1. 내가 누른 '좋아요'를 페이징
@@ -115,7 +118,7 @@ public class MyPageService {
         List<PostSummaryDto> dtoList = postIds.stream()
                 .map(postMap::get)
                 .filter(Objects::nonNull)
-                .map(post -> convertPostToSummaryDto(post, userId, appliedRecruitmentIds))
+                .map(post -> communityService.convertPostToPostSummaryDto(post, userId, appliedRecruitmentIds))
                 .toList();
 
         Page<PostSummaryDto> likedPostDtoPage = new PageImpl<>(dtoList, pageable, likePage.getTotalElements());
@@ -128,82 +131,4 @@ public class MyPageService {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
     }
-
-    // [Helper] Post Page -> PostSummaryDto Page 변환 (N+1 방지)
-    private Page<PostSummaryDto> convertToPostSummaryPage(Page<Post> postPage, Long currentUserId) {
-        List<Post> posts = postPage.getContent();
-        if (posts.isEmpty()) {
-            return Page.empty(postPage.getPageable());
-        }
-
-        List<Long> postIds = posts.stream().map(Post::getPostId).toList();
-
-        // --- N+1 방지 일괄(Bulk) 조회 ---
-
-        // 1. 좋아요 수 조회 (Map<PostId, LikeCount>)
-        Map<Long, Long> likeCountMap = postLikeRepository.findLikeCountsByPostIds(postIds).stream()
-                .collect(Collectors.toMap(
-                        map -> (Long) map.get("postId"),
-                        map -> (Long) map.get("likeCount")
-                ));
-
-        // 2. 댓글 수 조회 (Map<PostId, CommentCount>)
-        Map<Long, Long> commentCountMap = commentRepository.findCommentCountsByPostIds(postIds).stream()
-                .collect(Collectors.toMap(
-                        map -> (Long) map.get("postId"),
-                        map -> (Long) map.get("commentCount")
-                ));
-
-        // 3. '내'가 좋아요/지원했는지 여부 조회 (Set<PostId / RecruitmentId>)
-        Set<Long> likedPostIds = Collections.emptySet();
-        Set<Long> appliedRecruitmentIds = Collections.emptySet();
-
-        if (currentUserId != null) {
-            likedPostIds = postLikeRepository.findLikedPostIdsByUserId(currentUserId, postIds);
-
-            // GROUP 카테고리의 Recruitment ID 목록 추출
-            List<Long> recruitmentIds = posts.stream()
-                    .filter(p -> p.getCategory() == PostCategory.GROUP && p.getRecruitment() != null)
-                    .map(p -> p.getRecruitment().getRecruitmentId())
-                    .toList();
-
-            if (!recruitmentIds.isEmpty()) {
-                appliedRecruitmentIds = recruitmentMemberRepository
-                        .findAppliedRecruitmentIdsByUserIdAndRecruitmentIdIn(currentUserId, recruitmentIds);
-            }
-        }
-
-        // --- 맵(Map)을 사용하여 DTO 조립 (DB 접근 X) ---
-
-        final Set<Long> finalLikedPostIds = likedPostIds;
-        final Set<Long> finalAppliedRecruitmentIds = appliedRecruitmentIds;
-
-        return postPage.map(post -> {
-            Long likeCount = likeCountMap.getOrDefault(post.getPostId(), 0L);
-            Long commentCount = commentCountMap.getOrDefault(post.getPostId(), 0L);
-            Boolean isLiked = finalLikedPostIds.contains(post.getPostId());
-
-            Boolean isApplied = false;
-            if (post.getCategory() == PostCategory.GROUP && post.getRecruitment() != null) {
-                isApplied = finalAppliedRecruitmentIds.contains(post.getRecruitment().getRecruitmentId());
-            }
-
-            return PostSummaryDto.fromEntity(post, likeCount, commentCount, isLiked, isApplied);
-        });
-    }
-
-    private PostSummaryDto convertPostToSummaryDto(Post post, Long currentUserId, Set<Long> appliedRecruitmentIds) {
-        Long likeCount = postLikeRepository.countByIdPostId(post.getPostId());
-        Long commentCount = commentRepository.countByPostIdAndIsDeletedFalse(post.getPostId());
-        Boolean isLiked = currentUserId != null && postLikeRepository.existsByIdPostIdAndIdUserId(post.getPostId(), currentUserId);
-
-        // [5] 'isApplied' 로직 완성 (CommunityService의 헬퍼 로직 재사용)
-        Boolean isApplied = false;
-        if (currentUserId != null && post.getCategory() == PostCategory.GROUP && post.getRecruitment() != null) {
-            isApplied = appliedRecruitmentIds.contains(post.getRecruitment().getRecruitmentId());
-        }
-
-        // [6] 5번째 인자 'isApplied' 전달
-        return PostSummaryDto.fromEntity(post, likeCount, commentCount, isLiked, isApplied);
-    }
-}
+}*/

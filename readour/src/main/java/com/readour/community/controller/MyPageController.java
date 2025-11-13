@@ -3,7 +3,7 @@ package com.readour.community.controller;
 import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
 import com.readour.community.dto.*;
-import com.readour.community.service.MyPageService;
+import com.readour.community.service.CommunityService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -12,7 +12,6 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
-import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
@@ -26,7 +25,7 @@ import org.springframework.web.bind.annotation.*;
 @RequiredArgsConstructor
 public class MyPageController {
 
-    private final MyPageService myPageService;
+    private final CommunityService communityService;
     private static final Sort DEFAULT_SORT = Sort.by(Sort.Direction.DESC, "createdAt");
 
     @Operation(summary = "내 마이페이지 조회 (미리보기)",
@@ -39,7 +38,7 @@ public class MyPageController {
     public ResponseEntity<ApiResponseDto<MyPageResponseDto>> getMyPage(
             @RequestHeader("X-User-Id") Long userId // TODO: 인증 기능으로 교체
     ) {
-        MyPageResponseDto myPageData = myPageService.getMyPageData(userId);
+        MyPageResponseDto myPageData = communityService.getMyPageData(userId);
         return ResponseEntity.ok(apiResponse(myPageData, "내 마이페이지 정보 조회 성공"));
     }
 
@@ -54,7 +53,7 @@ public class MyPageController {
     public ResponseEntity<ApiResponseDto<MyPageResponseDto>> getUserPage(
             @PathVariable Long userId
     ) {
-        MyPageResponseDto myPageData = myPageService.getMyPageData(userId);
+        MyPageResponseDto myPageData = communityService.getMyPageData(userId);
         return ResponseEntity.ok(apiResponse(myPageData, "사용자 마이페이지 정보 조회 성공"));
     }
 
@@ -66,7 +65,7 @@ public class MyPageController {
             @PathVariable Long userId,
             @ParameterObject @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        MyPagePostsPageDto postPage = myPageService.getMyPosts(userId, pageable);
+        MyPagePostsPageDto postPage = communityService.getMyPosts(userId, pageable);
         return ResponseEntity.ok(apiResponse(postPage, "사용자 작성 게시글 조회 성공"));
     }
 
@@ -76,7 +75,7 @@ public class MyPageController {
             @PathVariable Long userId,
             @ParameterObject @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        MyPageCommentsPageDto commentPage = myPageService.getMyComments(userId, pageable);
+        MyPageCommentsPageDto commentPage = communityService.getMyComments(userId, pageable);
         return ResponseEntity.ok(apiResponse(commentPage, "사용자 작성 댓글 조회 성공"));
     }
 
@@ -86,7 +85,7 @@ public class MyPageController {
             @PathVariable Long userId,
             @ParameterObject @PageableDefault(size = 10, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable
     ) {
-        MyPageLikedPostsPageDto likedPostPage = myPageService.getLikedPosts(userId, pageable);
+        MyPageLikedPostsPageDto likedPostPage = communityService.getLikedPosts(userId, pageable);
         return ResponseEntity.ok(apiResponse(likedPostPage, "사용자 좋아요 게시글 조회 성공"));
     }
 
