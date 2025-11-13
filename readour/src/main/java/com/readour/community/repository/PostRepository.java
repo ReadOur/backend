@@ -11,7 +11,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -26,4 +25,10 @@ public interface PostRepository extends JpaRepository<Post, Long>, JpaSpecificat
     Page<Post> findAllByCategoryAndIsDeletedFalse(PostCategory category, Pageable pageable);
     Optional<Post> findByPostIdAndIsDeletedFalse(Long postId);
     Page<Post> findAllByBookBookIdAndIsDeletedFalse(Long bookId, Pageable pageable);
+
+    @Query("SELECT p FROM Post p LEFT JOIN FETCH p.recruitment WHERE p.isDeleted = false")
+    Page<Post> findAllWithRecruitmentByIsDeletedFalse(Pageable pageable);
+
+    @Query("SELECT p FROM Post p LEFT JOIN FETCH p.recruitment WHERE p.category = :category AND p.isDeleted = false")
+    Page<Post> findAllWithRecruitmentByCategoryAndIsDeletedFalse(@Param("category") PostCategory category, Pageable pageable);
 }

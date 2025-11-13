@@ -1,5 +1,6 @@
 package com.readour.community.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.readour.common.dto.FileResponseDto;
 import com.readour.community.entity.Book;
 import com.readour.common.entity.User;
@@ -16,6 +17,7 @@ import java.util.List;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public class PostResponseDto {
     private Long postId;
     private String title;
@@ -34,8 +36,16 @@ public class PostResponseDto {
     private LocalDateTime updatedAt;
     private List<CommentResponseDto> comments;
     private List<FileResponseDto> attachments;
+    private RecruitmentDetailsDto recruitmentDetails;
 
-    public static PostResponseDto fromEntity(Post post, List<CommentResponseDto> comments, Long likeCount, Long commentCount, Boolean isLiked, List<FileResponseDto> attachments) {
+    public static PostResponseDto fromEntity(
+            Post post,
+            List<CommentResponseDto> comments,
+            Long likeCount, Long commentCount,
+            Boolean isLiked,
+            List<FileResponseDto> attachments,
+            RecruitmentDetailsDto recruitmentDetails
+    ) {
         User author = post.getUser();
         Book book = post.getBook();
 
@@ -57,6 +67,7 @@ public class PostResponseDto {
                 .updatedAt(post.getUpdatedAt())
                 .comments(comments)
                 .attachments(attachments)
+                .recruitmentDetails(recruitmentDetails)
                 .build();
     }
 }
