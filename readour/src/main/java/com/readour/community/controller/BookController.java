@@ -2,8 +2,10 @@ package com.readour.community.controller;
 
 import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
+import com.readour.common.security.UserPrincipal;
 import com.readour.community.dto.*;
 import com.readour.community.entity.Book;
+import com.readour.community.enums.BookSearchType;
 import com.readour.community.service.BookService;
 import com.readour.community.service.CommunityService;
 import com.readour.community.dto.LibraryAvailabilityDto;
@@ -17,8 +19,10 @@ import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -41,10 +45,12 @@ public class BookController {
     })
     @GetMapping("/books/search")
     public ResponseEntity<ApiResponseDto<Page<BookSummaryDto>>> searchBooks(
+            @RequestParam(defaultValue = "TITLE") BookSearchType type,
             @RequestParam String keyword,
-            @ParameterObject Pageable pageable
+            @ParameterObject @PageableDefault(size = 10) Pageable pageable,
+            @AuthenticationPrincipal UserPrincipal currentUser
     ) {
-        Page<BookSummaryDto> bookPage = bookService.searchBooksFromApi(keyword, pageable);
+        Page<BookSummaryDto> bookPage = bookService.searchBooksFromApi(type, keyword, pageable);
         return ResponseEntity.ok(ApiResponseDto.<Page<BookSummaryDto>>builder()
                 .status(HttpStatus.OK.value())
                 .body(bookPage)
