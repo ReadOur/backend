@@ -320,7 +320,7 @@ public class BookService {
                 throw new CustomException(ErrorCode.NOT_FOUND, "API에서 도서 정보를 찾을 수 없습니다. ISBN: " + isbn13);
             }
 
-            // [3] [3] "detail" 리스트의 첫 번째 항목(get(0))에서 book 정보를 반환합니다.
+            // [3] "detail" 리스트의 첫 번째 항목(get(0))에서 book 정보를 반환합니다.
             return wrapper.getResponse().getDetail().get(0).getBook();
 
         } catch (JsonProcessingException e) {
