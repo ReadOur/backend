@@ -1,6 +1,8 @@
 package com.readour.community.dto;
 
 import com.readour.community.enums.PostCategory;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Min;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
@@ -17,4 +19,14 @@ public class PostCreateRequestDto {
     private Boolean isSpoiler;
     private List<String> warnings;
     private List<Long> attachmentIds;
+
+    @Schema(description = "모집 인원 (카테고리 GROUP 전용, 2 이상)", example = "4")
+    @Min(value = 2, message = "모집 인원은 최소 2명 이상이어야 합니다.")
+    private Integer recruitmentLimit;
+
+    @Schema(description = "자동 생성될 채팅방 이름 (카테고리 GROUP 전용)")
+    private String chatRoomName;
+
+    @Schema(description = "자동 생성될 채팅방 설명 (카테고리 GROUP 전용)")
+    private String chatRoomDescription;
 }

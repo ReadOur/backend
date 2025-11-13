@@ -1,8 +1,11 @@
 package com.readour.community.dto;
 
 import com.readour.common.entity.User;
+import com.readour.community.entity.Book;
 import com.readour.community.entity.Post;
+import com.readour.community.entity.Recruitment;
 import com.readour.community.enums.PostCategory;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.*;
 import java.time.LocalDateTime;
 
@@ -21,12 +24,24 @@ public class PostSummaryDto {
     private Long commentCount;
     private Boolean isLiked;
     private Boolean isSpoiler;
+    private Long bookId;
     private LocalDateTime createdAt;
 
-    public static PostSummaryDto fromEntity(Post post, Long likeCount, Long commentCount, Boolean isLiked) {
-        User author = post.getUser();
+    @Schema(description = "현재 인원 (GROUP 전용)")
+    private Integer currentMemberCount;
 
-        return PostSummaryDto.builder()
+    @Schema(description = "모집 정원 (GROUP 전용)")
+    private Integer recruitmentLimit;
+
+    @Schema(description = "현재 사용자가 이 모임에 지원했는지 여부 (GROUP 전용)")
+    private Boolean isApplied;
+
+    public static PostSummaryDto fromEntity(Post post, Long likeCount, Long commentCount, Boolean isLiked, Boolean isApplied) {
+        User author = post.getUser();
+        Book book = post.getBook();
+        Recruitment recruitment = post.getRecruitment();
+
+        PostSummaryDtoBuilder builder = PostSummaryDto.builder()
                 .postId(post.getPostId())
                 .title(post.getTitle())
                 .category(post.getCategory())
@@ -36,7 +51,15 @@ public class PostSummaryDto {
                 .commentCount(commentCount)
                 .isLiked(isLiked)
                 .isSpoiler(post.getIsSpoiler())
-                .createdAt(post.getCreatedAt())
-                .build();
+                .bookId(book != null ? book.getBookId() : null)
+                .createdAt(post.getCreatedAt());
+
+        if (recruitment != null && post.getCategory() == PostCategory.GROUP) {
+            builder.currentMemberCount(recruitment.getCurrentMemberCount())
+                    .recruitmentLimit(recruitment.getRecruitmentLimit())
+                    .isApplied(isApplied);
+        }
+
+        return builder.build();
     }
 }

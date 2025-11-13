@@ -1,33 +1,28 @@
 package com.readour.community.service;
 
 import com.readour.common.dto.FileResponseDto;
-import com.readour.community.entity.Book;
+import com.readour.community.entity.*;
 import com.readour.common.entity.FileAsset;
 import com.readour.common.entity.User;
 import com.readour.common.exception.CustomException;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.service.FileAssetService;
-import com.readour.community.repository.BookRepository;
+import com.readour.community.enums.RecruitmentStatus;
+import com.readour.community.repository.*;
 import com.readour.common.repository.UserRepository;
 import com.readour.community.dto.*;
-import com.readour.community.entity.Comment;
-import com.readour.community.entity.Post;
-import com.readour.community.entity.PostLike;
-import com.readour.community.entity.PostLikeId;
 import com.readour.community.enums.PostCategory;
 import com.readour.community.enums.PostSearchType;
-import com.readour.community.repository.CommentRepository;
-import com.readour.community.repository.PostLikeRepository;
-import com.readour.community.repository.PostRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collections;
+import java.util.Set;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -40,6 +35,8 @@ public class CommunityService {
     private final PostRepository postRepository;
     private final CommentRepository commentRepository;
     private final PostLikeRepository postLikeRepository;
+    private final RecruitmentRepository recruitmentRepository;
+    private final RecruitmentMemberRepository recruitmentMemberRepository;
 
     private final UserRepository userRepository;
     private final BookRepository bookRepository;
@@ -49,6 +46,9 @@ public class CommunityService {
     @Transactional(readOnly = true) // Use readOnly for read operations
     public Page<PostSummaryDto> getPostList(Pageable pageable, Long currentUserId, PostCategory category) {
         log.debug("getPostList called. Category: {}", category);
+        Set<Long> appliedRecruitmentIds = (currentUserId != null) ?
+                recruitmentMemberRepository.findAllRecruitmentIdsByUserId(currentUserId) : Collections.emptySet();
+
         Page<Post> postPage;
         if (category != null) {
             postPage = postRepository.findAllByCategoryAndIsDeletedFalse(category, pageable);
@@ -56,59 +56,32 @@ public class CommunityService {
             postPage = postRepository.findAllByIsDeletedFalse(pageable);
         }
 
-        List<Post> posts = postPage.getContent();
-        List<PostSummaryDto> summaryDtos = posts.stream()
-                .map(post -> {
-                    Long likeCount = postLikeRepository.countByIdPostId(post.getPostId());
-                    Long commentCount = commentRepository.countByPostIdAndIsDeletedFalse(post.getPostId());
-                    Boolean isLiked = (currentUserId == null) ? false : postLikeRepository.existsByIdPostIdAndIdUserId(post.getPostId(), currentUserId);
-                    return PostSummaryDto.fromEntity(post, likeCount, commentCount, isLiked);
-                })
-                .collect(Collectors.toList());
-
-        // Convert Page<Post> to Page<PostSummaryDto>
-        return new PageImpl<>(summaryDtos, postPage.getPageable(), postPage.getTotalElements());
+        return postPage.map(post -> convertToPostSummaryDto(post, currentUserId, appliedRecruitmentIds));
     }
 
     // bookId로 게시글 목록 조회
     @Transactional(readOnly = true)
     public Page<PostSummaryDto> getPostListByBookId(Long bookId, Long currentUserId, Pageable pageable) {
         log.debug("getPostListByBookId called. bookId: {}", bookId);
+        // (N+1 방지용)
+        Set<Long> appliedRecruitmentIds = (currentUserId != null) ?
+                recruitmentMemberRepository.findAllRecruitmentIdsByUserId(currentUserId) : Collections.emptySet();
 
-        // 1. Repository에서 Paging 조회
         Page<Post> postPage = postRepository.findAllByBookBookIdAndIsDeletedFalse(bookId, pageable);
 
-        // 2. PostSummaryDto로 변환 (getPostList 로직 재사용)
-        List<PostSummaryDto> summaryDtos = postPage.getContent().stream()
-                .map(post -> {
-                    Long likeCount = postLikeRepository.countByIdPostId(post.getPostId());
-                    Long commentCount = commentRepository.countByPostIdAndIsDeletedFalse(post.getPostId());
-                    Boolean isLiked = (currentUserId == null) ? false : postLikeRepository.existsByIdPostIdAndIdUserId(post.getPostId(), currentUserId);
-                    return PostSummaryDto.fromEntity(post, likeCount, commentCount, isLiked);
-                })
-                .collect(Collectors.toList());
-
-        return new PageImpl<>(summaryDtos, postPage.getPageable(), postPage.getTotalElements());
+        return postPage.map(post -> convertToPostSummaryDto(post, currentUserId, appliedRecruitmentIds));
     }
 
     @Transactional(readOnly = true)
-    public Page<PostSummaryDto> searchPosts(
-            PostSearchType searchType,
-            String keyword,
-            PostCategory category,
-            Pageable pageable,
-            Long currentUserId
-    ) {
-        log.debug("searchPosts called. Type: {}, Keyword: {}, Category: {}", searchType, keyword, category);
-        Specification<Post> spec = postSpecification.search(searchType, keyword, category);
-        Page<Post> postPage = postRepository.findAll(spec, pageable);
+    public Page<PostSummaryDto> searchPosts(PostSearchType searchType, String keyword, PostCategory category, Pageable pageable, Long currentUserId) {
+        // (N+1 방지용)
+        Set<Long> appliedRecruitmentIds = (currentUserId != null) ?
+                recruitmentMemberRepository.findAllRecruitmentIdsByUserId(currentUserId) : Collections.emptySet();
 
-        return postPage.map(post -> {
-            Long likeCount = postLikeRepository.countByIdPostId(post.getPostId());
-            Long commentCount = commentRepository.countByPostIdAndIsDeletedFalse(post.getPostId());
-            Boolean isLiked = (currentUserId == null) ? false : postLikeRepository.existsByIdPostIdAndIdUserId(post.getPostId(), currentUserId);
-            return PostSummaryDto.fromEntity(post, likeCount, commentCount, isLiked);
-        });
+        Specification<Post> spec = postSpecification.search(searchType, keyword, category);
+        Page<Post> postPage = postRepository.findAll(spec, pageable); // (Fetch Join은 Spec과 함께 쓰기 까다로우므로 N+1 발생 가능성 있음)
+
+        return postPage.map(post -> convertToPostSummaryDto(post, currentUserId, appliedRecruitmentIds));
     }
 
     @Transactional
@@ -123,6 +96,23 @@ public class CommunityService {
                     .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Book not found with id: " + requestDto.getBookId()));
         } // TODO: 없으면 도서 검색 api 날려서 찾아보고도 없으면 404 날리기. 있으면 db 추가.
 
+        Recruitment recruitment = null;
+        if (requestDto.getCategory() == PostCategory.GROUP) {
+            if (requestDto.getRecruitmentLimit() == null || requestDto.getRecruitmentLimit() < 2) {
+                throw new CustomException(ErrorCode.BAD_REQUEST, "모집 인원은 최소 2명 이상이어야 합니다.");
+            }
+            if (requestDto.getChatRoomName() == null || requestDto.getChatRoomName().isBlank()) {
+                throw new CustomException(ErrorCode.BAD_REQUEST, "모임(GROUP) 생성 시 채팅방 이름은 필수입니다.");
+            }
+            recruitment = Recruitment.builder()
+                    .recruitmentLimit(requestDto.getRecruitmentLimit())
+                    .chatRoomName(requestDto.getChatRoomName())
+                    .chatRoomDescription(requestDto.getChatRoomDescription())
+                    .currentMemberCount(1)
+                    .status(RecruitmentStatus.RECRUITING)
+                    .build();
+        }
+
         Post post = Post.builder()
                 .user(user)
                 .book(book)
@@ -133,10 +123,25 @@ public class CommunityService {
                 .hit(0)
                 .isDeleted(false)
                 .isHidden(false)
+                .recruitment(recruitment)
                 .build();
+
+        if (recruitment != null) {
+            recruitment.setPost(post);
+        }
 
         Post savedPost = postRepository.save(post);
         log.debug("Post saved with id: {}", savedPost.getPostId());
+
+        if (recruitment != null) {
+            RecruitmentMember selfMember = RecruitmentMember.builder()
+                    .id(new RecruitmentMemberId(recruitment.getRecruitmentId(), userId))
+                    .recruitment(recruitment)
+                    .user(user)
+                    .build();
+            recruitmentMemberRepository.save(selfMember);
+            log.info("Recruitment post created. postId: {}, recruitmentId: {}", savedPost.getPostId(), recruitment.getRecruitmentId());
+        }
 
         if (requestDto.getWarnings() != null && !requestDto.getWarnings().isEmpty()) {
             log.debug("Adding {} warnings", requestDto.getWarnings().size());
@@ -147,7 +152,7 @@ public class CommunityService {
         fileAssetService.replaceLinks("POST", savedPost.getPostId(), requestDto.getAttachmentIds());
         List<FileResponseDto> attachments = mapToResponses(fileAssetService.getLinkedAssets("POST", savedPost.getPostId()));
 
-        return PostResponseDto.fromEntity(savedPost, List.of(), 0L, 0L, false, attachments);
+        return getPostDetail(savedPost.getPostId(), userId);
     }
 
     @Transactional
@@ -171,17 +176,23 @@ public class CommunityService {
 
         List<FileResponseDto> attachments = mapToResponses(fileAssetService.getLinkedAssets("POST", postId));
 
-        return PostResponseDto.fromEntity(post, comments, likeCount, commentCount, isLiked, attachments);
+        boolean isApplied = false;
+        if (post.getRecruitment() != null && currentUserId != null) {
+            isApplied = recruitmentMemberRepository.existsById(
+                    new RecruitmentMemberId(post.getRecruitment().getRecruitmentId(), currentUserId)
+            );
+        }
+        RecruitmentDetailsDto recruitmentDetails = RecruitmentDetailsDto.fromEntity(post.getRecruitment(), isApplied);
+
+        return PostResponseDto.fromEntity(post, comments, likeCount, commentCount, isLiked, attachments, recruitmentDetails);
     }
 
     @Transactional
     public void incrementPostHit(Long postId) {
-        // 삭제되지 않은 게시글인지 확인 (Soft Delete 검사)
         if (postRepository.findByPostIdAndIsDeletedFalse(postId).isPresent()) {
             postRepository.incrementHit(postId);
             log.debug("Post hit incremented for postId: {}", postId);
         } else {
-            // 게시글이 없거나 삭제된 경우, 조용히 무시 (에러 불필요)
             log.warn("Attempted to increment hit for non-existent or deleted post: {}", postId);
         }
     }
@@ -216,6 +227,14 @@ public class CommunityService {
             throw new CustomException(ErrorCode.FORBIDDEN, "User does not have permission to update this post");
         }
 
+        if (requestDto.getCategory() != PostCategory.GROUP && post.getCategory() == PostCategory.GROUP) {
+            throw new CustomException(ErrorCode.BAD_REQUEST, "모임 카테고리에서 다른 카테고리로 수정할 수 없습니다.");
+        }
+
+        if (requestDto.getCategory() == PostCategory.GROUP && post.getCategory() != PostCategory.GROUP) {
+            throw new CustomException(ErrorCode.BAD_REQUEST, "다른 카테고리에서 모임 카테고리로 수정할 수 없습니다.");
+        }
+
         if (requestDto.getTitle() != null) {
             post.setTitle(requestDto.getTitle());
         }
@@ -247,9 +266,32 @@ public class CommunityService {
         Long commentCount = commentRepository.countByPostIdAndIsDeletedFalse(postId);
         Boolean isLiked = postLikeRepository.existsByIdPostIdAndIdUserId(postId, userId);
 
+        if (post.getCategory() == PostCategory.GROUP) {
+            Recruitment recruitment = post.getRecruitment();
+            if (recruitment == null) {
+                throw new CustomException(ErrorCode.INTERNAL_SERVER_ERROR, "모임 게시글의 모집 정보가 누락되었습니다.");
+            }
+            if (recruitment.getStatus() != RecruitmentStatus.RECRUITING) {
+                throw new CustomException(ErrorCode.FORBIDDEN, "이미 모집이 시작/완료된 모임의 정보는 변경할 수 없습니다.");
+            }
+
+            if (requestDto.getRecruitmentLimit() != null) {
+                if (requestDto.getRecruitmentLimit() < recruitment.getCurrentMemberCount()) {
+                    throw new CustomException(ErrorCode.BAD_REQUEST, "모집 인원을 현재 인원보다 적게 설정할 수 없습니다.");
+                }
+                recruitment.setRecruitmentLimit(requestDto.getRecruitmentLimit());
+            }
+            if (requestDto.getChatRoomName() != null) {
+                recruitment.setChatRoomName(requestDto.getChatRoomName());
+            }
+            if (requestDto.getChatRoomDescription() != null) {
+                recruitment.setChatRoomDescription(requestDto.getChatRoomDescription());
+            }
+        }
+
         List<FileResponseDto> attachments = mapToResponses(fileAssetService.getLinkedAssets("POST", postId));
 
-        return PostResponseDto.fromEntity(updatedPost, comments, likeCount, commentCount, isLiked, attachments);
+        return getPostDetail(updatedPost.getPostId(), userId);
     }
 
     private List<FileResponseDto> mapToResponses(List<FileAsset> assets) {
@@ -265,6 +307,15 @@ public class CommunityService {
 
         if (!post.getUser().getId().equals(userId)) {
             throw new CustomException(ErrorCode.FORBIDDEN, "User does not have permission to delete this post");
+        }
+
+        if (post.getCategory() == PostCategory.GROUP && post.getRecruitment() != null) {
+            Recruitment recruitment = post.getRecruitment();
+            if (recruitment.getStatus() == RecruitmentStatus.RECRUITING) {
+                recruitment.setStatus(RecruitmentStatus.CANCELLED);
+                recruitmentRepository.save(recruitment);
+                log.debug("Recruitment cancelled for postId: {}", postId);
+            }
         }
 
         post.updateStatus(true);
@@ -327,5 +378,19 @@ public class CommunityService {
 
         comment.updateStatus(true);
         commentRepository.save(comment);
+    }
+
+    // [Helper] Post -> PostSummaryDto 변환
+    private PostSummaryDto convertToPostSummaryDto(Post post, Long currentUserId, Set<Long> appliedRecruitmentIds) {
+        Long likeCount = postLikeRepository.countByIdPostId(post.getPostId());
+        Long commentCount = commentRepository.countByPostIdAndIsDeletedFalse(post.getPostId());
+        Boolean isLiked = (currentUserId == null) ? false : postLikeRepository.existsByIdPostIdAndIdUserId(post.getPostId(), currentUserId);
+
+        Boolean isApplied = false;
+        if (post.getRecruitment() != null && currentUserId != null) {
+            isApplied = appliedRecruitmentIds.contains(post.getRecruitment().getRecruitmentId());
+        }
+
+        return PostSummaryDto.fromEntity(post, likeCount, commentCount, isLiked, isApplied);
     }
 }

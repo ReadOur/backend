@@ -25,8 +25,6 @@ public class Post {
     @JoinColumn(name = "book_id")
     private Book book;
 
-    private Long chatRoomId;
-
     @Enumerated(EnumType.STRING)
     @Column(name = "category")
     private PostCategory category;
@@ -45,15 +43,15 @@ public class Post {
     @UpdateTimestamp
     private LocalDateTime updatedAt;
 
+    @OneToOne(fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+    @JoinColumn(name = "recruitment_id")
+    private Recruitment recruitment;
+
     @OneToMany(mappedBy = "post", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     @Builder.Default
     private List<PostWarning> warnings = new ArrayList<>();
 
     // --- Helper Methods
-    public void incrementHit() {
-        if (this.hit == null) this.hit = 0;
-        this.hit++;
-    }
     public void updateStatus(boolean isDeleted) {
         this.isDeleted = isDeleted;
     }

@@ -8,6 +8,7 @@ import com.readour.community.dto.*;
 import com.readour.community.entity.Comment;
 import com.readour.community.entity.Post;
 import com.readour.community.entity.PostLike;
+import com.readour.community.enums.PostCategory;
 import com.readour.community.repository.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -18,10 +19,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -34,6 +32,7 @@ public class MyPageService {
     private final PostRepository postRepository;
     private final CommentRepository commentRepository;
     private final PostLikeRepository postLikeRepository;
+    private final RecruitmentMemberRepository recruitmentMemberRepository;
 
     private static final int PREVIEW_SIZE = 5;
     private static final Sort DESC_BY_CREATED = Sort.by(Sort.Direction.DESC, "createdAt");
@@ -52,7 +51,6 @@ public class MyPageService {
         List<MyCommentDto> myComments = getMyComments(userId, previewPageable).getCommentPage().getContent();
         List<PostSummaryDto> likedPosts = getLikedPosts(userId, previewPageable).getLikedPostsPage().getContent();
 
-        // 3. DTO로 조합
         return MyPageResponseDto.from(user, myPosts, myComments, likedPosts);
     }
 
@@ -66,7 +64,6 @@ public class MyPageService {
         // Post -> PostSummaryDto 변환
         Page<PostSummaryDto> postDtoPage = convertToPostSummaryPage(postPage, userId);
 
-        // 래퍼 DTO로 감싸서 반환
         return MyPagePostsPageDto.from(user, postDtoPage);
     }
 
@@ -86,7 +83,6 @@ public class MyPageService {
         // 3. DTO 변환
         Page<MyCommentDto> commentDtoPage = commentPage.map(comment -> MyCommentDto.fromEntities(comment, postMap.get(comment.getPostId())));
 
-        // 래퍼 DTO로 감싸서 반환
         return MyPageCommentsPageDto.from(user, commentDtoPage);
     }
 
@@ -111,16 +107,19 @@ public class MyPageService {
         Map<Long, Post> postMap = postRepository.findAllById(postIds).stream()
                 .collect(Collectors.toMap(Post::getPostId, Function.identity()));
 
+        Set<Long> appliedRecruitmentIds = (userId != null)
+                ? recruitmentMemberRepository.findAllRecruitmentIdsByUserId(userId)
+                : Collections.emptySet();
+
         // 4. Post -> PostSummaryDto 변환 (likePage의 순서대로)
         List<PostSummaryDto> dtoList = postIds.stream()
                 .map(postMap::get)
                 .filter(Objects::nonNull)
-                .map(post -> convertPostToSummaryDto(post, userId))
+                .map(post -> convertPostToSummaryDto(post, userId, appliedRecruitmentIds))
                 .toList();
 
         Page<PostSummaryDto> likedPostDtoPage = new PageImpl<>(dtoList, pageable, likePage.getTotalElements());
 
-        // 래퍼 DTO로 감싸서 반환
         return MyPageLikedPostsPageDto.from(user, likedPostDtoPage);
     }
 
@@ -132,23 +131,79 @@ public class MyPageService {
 
     // [Helper] Post Page -> PostSummaryDto Page 변환 (N+1 방지)
     private Page<PostSummaryDto> convertToPostSummaryPage(Page<Post> postPage, Long currentUserId) {
-        // (N+1 방지: Post ID 목록 추출)
-        List<Long> postIds = postPage.getContent().stream().map(Post::getPostId).toList();
-        if (postIds.isEmpty()) {
+        List<Post> posts = postPage.getContent();
+        if (posts.isEmpty()) {
             return Page.empty(postPage.getPageable());
         }
 
-        // (N+1 방지: 좋아요 수, 댓글 수, 내 좋아요 여부 일괄 조회 - 이 부분은 별도 쿼리 최적화가 필요하지만, 우선 map으로 구현)
+        List<Long> postIds = posts.stream().map(Post::getPostId).toList();
 
-        return postPage.map(post -> convertPostToSummaryDto(post, currentUserId));
+        // --- N+1 방지 일괄(Bulk) 조회 ---
+
+        // 1. 좋아요 수 조회 (Map<PostId, LikeCount>)
+        Map<Long, Long> likeCountMap = postLikeRepository.findLikeCountsByPostIds(postIds).stream()
+                .collect(Collectors.toMap(
+                        map -> (Long) map.get("postId"),
+                        map -> (Long) map.get("likeCount")
+                ));
+
+        // 2. 댓글 수 조회 (Map<PostId, CommentCount>)
+        Map<Long, Long> commentCountMap = commentRepository.findCommentCountsByPostIds(postIds).stream()
+                .collect(Collectors.toMap(
+                        map -> (Long) map.get("postId"),
+                        map -> (Long) map.get("commentCount")
+                ));
+
+        // 3. '내'가 좋아요/지원했는지 여부 조회 (Set<PostId / RecruitmentId>)
+        Set<Long> likedPostIds = Collections.emptySet();
+        Set<Long> appliedRecruitmentIds = Collections.emptySet();
+
+        if (currentUserId != null) {
+            likedPostIds = postLikeRepository.findLikedPostIdsByUserId(currentUserId, postIds);
+
+            // GROUP 카테고리의 Recruitment ID 목록 추출
+            List<Long> recruitmentIds = posts.stream()
+                    .filter(p -> p.getCategory() == PostCategory.GROUP && p.getRecruitment() != null)
+                    .map(p -> p.getRecruitment().getRecruitmentId())
+                    .toList();
+
+            if (!recruitmentIds.isEmpty()) {
+                appliedRecruitmentIds = recruitmentMemberRepository
+                        .findAppliedRecruitmentIdsByUserIdAndRecruitmentIdIn(currentUserId, recruitmentIds);
+            }
+        }
+
+        // --- 맵(Map)을 사용하여 DTO 조립 (DB 접근 X) ---
+
+        final Set<Long> finalLikedPostIds = likedPostIds;
+        final Set<Long> finalAppliedRecruitmentIds = appliedRecruitmentIds;
+
+        return postPage.map(post -> {
+            Long likeCount = likeCountMap.getOrDefault(post.getPostId(), 0L);
+            Long commentCount = commentCountMap.getOrDefault(post.getPostId(), 0L);
+            Boolean isLiked = finalLikedPostIds.contains(post.getPostId());
+
+            Boolean isApplied = false;
+            if (post.getCategory() == PostCategory.GROUP && post.getRecruitment() != null) {
+                isApplied = finalAppliedRecruitmentIds.contains(post.getRecruitment().getRecruitmentId());
+            }
+
+            return PostSummaryDto.fromEntity(post, likeCount, commentCount, isLiked, isApplied);
+        });
     }
 
-    // [Helper] Post -> PostSummaryDto 변환 (단일)
-    private PostSummaryDto convertPostToSummaryDto(Post post, Long currentUserId) {
+    private PostSummaryDto convertPostToSummaryDto(Post post, Long currentUserId, Set<Long> appliedRecruitmentIds) {
         Long likeCount = postLikeRepository.countByIdPostId(post.getPostId());
         Long commentCount = commentRepository.countByPostIdAndIsDeletedFalse(post.getPostId());
         Boolean isLiked = currentUserId != null && postLikeRepository.existsByIdPostIdAndIdUserId(post.getPostId(), currentUserId);
 
-        return PostSummaryDto.fromEntity(post, likeCount, commentCount, isLiked);
+        // [5] 'isApplied' 로직 완성 (CommunityService의 헬퍼 로직 재사용)
+        Boolean isApplied = false;
+        if (currentUserId != null && post.getCategory() == PostCategory.GROUP && post.getRecruitment() != null) {
+            isApplied = appliedRecruitmentIds.contains(post.getRecruitment().getRecruitmentId());
+        }
+
+        // [6] 5번째 인자 'isApplied' 전달
+        return PostSummaryDto.fromEntity(post, likeCount, commentCount, isLiked, isApplied);
     }
 }
