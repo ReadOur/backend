@@ -10,6 +10,7 @@ import com.readour.community.enums.PostCategory;
 import com.readour.community.enums.PostSearchType;
 import com.readour.community.service.CommunityService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -28,6 +29,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/community")
 @RequiredArgsConstructor
+@SecurityRequirement(name = "bearerAuth")
 public class CommunityController {
 
     private final CommunityService communityService;
