@@ -76,7 +76,14 @@ public class CommunityService {
         // 3. 인기 도서 (회원 맞춤형, 10개)
         Pageable popularBookPageable = PageRequest.of(0, MAX_LIST_SIZE);
 
-        Page<PopularBookDto> popularBooks = bookService.getPopularBooks(currentUser, popularBookPageable);
+        Page<PopularBookDto> popularBooks;
+
+        try {
+            popularBooks = bookService.getPopularBooks(currentUser, popularBookPageable);
+        } catch (Exception e) {
+            log.warn("메인 페이지 - 인기 도서 API 호출에 실패했습니다. (외부 API 오류일 수 있음): {}", e.getMessage());
+            popularBooks = Page.empty(popularBookPageable);
+        }
 
         // 4. DTO로 조립
         return MainPageResponseDto.builder()

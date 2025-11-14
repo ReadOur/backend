@@ -2,6 +2,10 @@ package com.readour.community.controller;
 
 import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
+import com.readour.common.entity.User;
+import com.readour.common.enums.ErrorCode;
+import com.readour.common.exception.CustomException;
+import com.readour.common.security.UserPrincipal;
 import com.readour.community.dto.*;
 import com.readour.community.enums.BookSearchType;
 import com.readour.community.service.BookService;
@@ -20,6 +24,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -32,6 +37,13 @@ public class BookController {
 
     private final BookService bookService;
     private final CommunityService communityService;
+
+    private Long getAuthenticatedUserId(UserPrincipal userPrincipal) {
+        if (userPrincipal == null) {
+            throw new CustomException(ErrorCode.UNAUTHORIZED, "인증이 필요합니다.");
+        }
+        return userPrincipal.getId();
+    }
 
     // (SD-26: 도서 검색)
     @Operation(summary = "도서 검색 (외부 API)",
@@ -65,10 +77,11 @@ public class BookController {
     @GetMapping("/books/isbn/{isbn13}")
     public ResponseEntity<ApiResponseDto<BookResponseDto>> getBookDetailsByIsbn(
             @PathVariable String isbn13,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId
+            @AuthenticationPrincipal UserPrincipal userPrincipal
     ) {
-        boolean existsInDb = bookService.isBookInDb(isbn13);
+        Long userId = (userPrincipal != null) ? userPrincipal.getId() : null;
 
+        boolean existsInDb = bookService.isBookInDb(isbn13);
         BookResponseDto responseDto = bookService.findOrCreateBookByIsbn(isbn13, userId);
 
         if (existsInDb) {
@@ -99,8 +112,9 @@ public class BookController {
     @GetMapping("/books/{bookId}")
     public ResponseEntity<ApiResponseDto<BookResponseDto>> getBookDetails(
             @PathVariable Long bookId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId
+            @AuthenticationPrincipal UserPrincipal userPrincipal
     ) {
+        Long userId = (userPrincipal != null) ? userPrincipal.getId() : null;
         BookResponseDto responseDto = bookService.getBookDetailsById(bookId, userId);
 
         return ResponseEntity.ok(ApiResponseDto.<BookResponseDto>builder()
@@ -121,8 +135,10 @@ public class BookController {
     @PostMapping("/books/{bookId}/wishlist")
     public ResponseEntity<ApiResponseDto<Map<String, Boolean>>> toggleWishlist(
             @PathVariable Long bookId,
-            @RequestHeader("X-User-Id") Long userId // (인증 필수)
+            @AuthenticationPrincipal UserPrincipal userPrincipal
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
+
         boolean isWishlisted = bookService.toggleWishlist(bookId, userId);
 
         ApiResponseDto<Map<String, Boolean>> response = ApiResponseDto.<Map<String, Boolean>>builder()
@@ -143,9 +159,10 @@ public class BookController {
     @PostMapping("/books/{bookId}/reviews")
     public ResponseEntity<ApiResponseDto<BookReviewResponseDto>> addBookReview(
             @PathVariable Long bookId,
-            @RequestHeader("X-User-Id") Long userId, // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @Valid @RequestBody BookReviewCreateRequestDto requestDto
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         BookReviewResponseDto review = bookService.addBookReview(bookId, userId, requestDto);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponseDto.<BookReviewResponseDto>builder()
                 .status(HttpStatus.CREATED.value())
@@ -183,9 +200,10 @@ public class BookController {
     @PutMapping("/books/reviews/{reviewId}")
     public ResponseEntity<ApiResponseDto<BookReviewResponseDto>> updateBookReview(
             @PathVariable Long reviewId,
-            @RequestHeader("X-User-Id") Long userId, // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @Valid @RequestBody BookReviewUpdateRequestDto requestDto
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         BookReviewResponseDto review = bookService.updateBookReview(reviewId, userId, requestDto);
         return ResponseEntity.ok(ApiResponseDto.<BookReviewResponseDto>builder()
                 .status(HttpStatus.OK.value())
@@ -203,8 +221,9 @@ public class BookController {
     @DeleteMapping("/books/reviews/{reviewId}")
     public ResponseEntity<ApiResponseDto<Void>> deleteBookReview(
             @PathVariable Long reviewId,
-            @RequestHeader("X-User-Id") Long userId // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         bookService.deleteBookReview(reviewId, userId);
         return ResponseEntity.ok(ApiResponseDto.<Void>builder()
                 .status(HttpStatus.OK.value())
@@ -221,9 +240,10 @@ public class BookController {
     @PostMapping("/books/{bookId}/highlights")
     public ResponseEntity<ApiResponseDto<BookHighlightResponseDto>> addBookHighlight(
             @PathVariable Long bookId,
-            @RequestHeader("X-User-Id") Long userId, // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @Valid @RequestBody BookHighlightCreateRequestDto requestDto
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         BookHighlightResponseDto highlight = bookService.addBookHighlight(bookId, userId, requestDto);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponseDto.<BookHighlightResponseDto>builder()
                 .status(HttpStatus.CREATED.value())
@@ -261,9 +281,10 @@ public class BookController {
     @PutMapping("/books/highlights/{highlightId}")
     public ResponseEntity<ApiResponseDto<BookHighlightResponseDto>> updateBookHighlight(
             @PathVariable Long highlightId,
-            @RequestHeader("X-User-Id") Long userId, // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @Valid @RequestBody BookHighlightUpdateRequestDto requestDto
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         BookHighlightResponseDto highlight = bookService.updateBookHighlight(highlightId, userId, requestDto);
         return ResponseEntity.ok(ApiResponseDto.<BookHighlightResponseDto>builder()
                 .status(HttpStatus.OK.value())
@@ -281,8 +302,9 @@ public class BookController {
     @DeleteMapping("/books/highlights/{highlightId}")
     public ResponseEntity<ApiResponseDto<Void>> deleteBookHighlight(
             @PathVariable Long highlightId,
-            @RequestHeader("X-User-Id") Long userId // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         bookService.deleteBookHighlight(highlightId, userId);
         return ResponseEntity.ok(ApiResponseDto.<Void>builder()
                 .status(HttpStatus.OK.value())
@@ -300,8 +322,9 @@ public class BookController {
     @GetMapping("/books/availability")
     public ResponseEntity<ApiResponseDto<List<LibraryAvailabilityDto>>> getBookAvailability(
             @RequestParam("isbn13") String isbn13,
-            @RequestHeader("X-User-Id") Long userId // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         List<LibraryAvailabilityDto> availabilityList = bookService.checkBookAvailability(userId, isbn13);
 
         return ResponseEntity.ok(ApiResponseDto.<List<LibraryAvailabilityDto>>builder()
@@ -321,9 +344,10 @@ public class BookController {
     @GetMapping("/books/{bookId}/posts")
     public ResponseEntity<ApiResponseDto<Page<PostSummaryDto>>> getPostsByBookId(
             @PathVariable Long bookId,
-            @RequestHeader(value = "X-User-Id", required = false) Long userId, // 비회원 조회 가능
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @ParameterObject Pageable pageable
     ) {
+        Long userId = (userPrincipal != null) ? userPrincipal.getId() : null;
         Page<PostSummaryDto> postPage = communityService.getPostListByBookId(bookId, userId, pageable);
 
         return ResponseEntity.ok(ApiResponseDto.<Page<PostSummaryDto>>builder()

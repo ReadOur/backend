@@ -26,7 +26,7 @@ public class MainPageController {
             description = "메인 페이지에 필요한 모든 데이터(인기글, 모집글, 추천도서)를 조회합니다. (비회원/회원 겸용)")
     @GetMapping
     public ResponseEntity<ApiResponseDto<MainPageResponseDto>> getMainPageData(
-            @AuthenticationPrincipal UserPrincipal currentUser // (비회원은 null이 됨)
+            @AuthenticationPrincipal UserPrincipal currentUser
     ) {
         MainPageResponseDto mainPageData = communityService.getMainPageData(currentUser);
 

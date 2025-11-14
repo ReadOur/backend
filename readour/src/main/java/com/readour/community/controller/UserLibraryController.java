@@ -2,6 +2,9 @@ package com.readour.community.controller;
 
 import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
+import com.readour.common.enums.ErrorCode;
+import com.readour.common.exception.CustomException;
+import com.readour.common.security.UserPrincipal;
 import com.readour.community.dto.LibraryRegistrationRequestDto;
 import com.readour.community.dto.LibrarySearchResponseDto;
 import com.readour.community.dto.UserLibraryResponseDto;
@@ -21,6 +24,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -33,7 +37,14 @@ import java.util.List;
 @Validated
 public class UserLibraryController {
 
-    private final BookService bookService; // BookService에 로직 위임
+    private final BookService bookService;
+
+    private Long getAuthenticatedUserId(UserPrincipal userPrincipal) {
+        if (userPrincipal == null) {
+            throw new CustomException(ErrorCode.UNAUTHORIZED, "인증이 필요합니다.");
+        }
+        return userPrincipal.getId();
+    }
 
     @Operation(summary = "선호 도서관 등록을 위한 도서관 검색",
             description = "지역 코드를 기준으로 공공 도서관 목록을 검색합니다. (API #1)")
@@ -78,9 +89,10 @@ public class UserLibraryController {
     })
     @PostMapping
     public ResponseEntity<ApiResponseDto<UserLibraryResponseDto>> registerLibrary(
-            @RequestHeader("X-User-Id") Long userId, // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @Valid @RequestBody LibraryRegistrationRequestDto requestDto
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         UserLibraryResponseDto responseDto = bookService.registerInterestedLibrary(userId, requestDto.getLibraryCode(), requestDto.getLibraryName());
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponseDto.<UserLibraryResponseDto>builder()
                 .status(HttpStatus.CREATED.value())
@@ -97,9 +109,10 @@ public class UserLibraryController {
     })
     @DeleteMapping("/{libraryCode}")
     public ResponseEntity<ApiResponseDto<Void>> deleteLibrary(
-            @RequestHeader("X-User-Id") Long userId, // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @PathVariable String libraryCode
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         bookService.deleteInterestedLibrary(userId, libraryCode);
         return ResponseEntity.ok(ApiResponseDto.<Void>builder()
                 .status(HttpStatus.OK.value())
@@ -113,8 +126,9 @@ public class UserLibraryController {
     })
     @GetMapping
     public ResponseEntity<ApiResponseDto<List<UserLibraryResponseDto>>> getLibraries(
-            @RequestHeader("X-User-Id") Long userId // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         List<UserLibraryResponseDto> libraries = bookService.getInterestedLibraries(userId);
         return ResponseEntity.ok(ApiResponseDto.<List<UserLibraryResponseDto>>builder()
                 .status(HttpStatus.OK.value())

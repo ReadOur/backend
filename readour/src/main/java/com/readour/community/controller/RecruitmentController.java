@@ -1,6 +1,9 @@
 package com.readour.community.controller;
 
 import com.readour.common.dto.ApiResponseDto;
+import com.readour.common.enums.ErrorCode;
+import com.readour.common.exception.CustomException;
+import com.readour.common.security.UserPrincipal;
 import com.readour.community.service.RecruitmentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -9,6 +12,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -21,6 +25,13 @@ public class RecruitmentController {
 
     private final RecruitmentService recruitmentService;
 
+    private Long getAuthenticatedUserId(UserPrincipal userPrincipal) {
+        if (userPrincipal == null) {
+            throw new CustomException(ErrorCode.UNAUTHORIZED, "인증이 필요합니다.");
+        }
+        return userPrincipal.getId();
+    }
+
     @Operation(summary = "모임 지원 토글 (지원/취소)",
             description = "모집 중인 게시글(postId)에 참가 신청하거나 취소합니다. (좋아요/위시리스트와 동일한 방식)")
     @ApiResponses(value = {
@@ -32,8 +43,9 @@ public class RecruitmentController {
     @PostMapping("/{postId}/apply-toggle")
     public ResponseEntity<ApiResponseDto<Map<String, Boolean>>> toggleRecruitment(
             @PathVariable Long postId,
-            @RequestHeader("X-User-Id") Long userId // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         boolean isApplied = recruitmentService.toggleRecruitment(postId, userId);
 
         String message = isApplied ? "모임 지원이 완료되었습니다." : "모임 지원이 취소되었습니다.";

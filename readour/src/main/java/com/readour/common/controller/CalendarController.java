@@ -6,6 +6,9 @@ import com.readour.common.dto.CalendarEventResponseDto;
 import com.readour.common.dto.CalendarEventUpdateRequestDto;
 import com.readour.common.dto.ErrorResponseDto;
 import com.readour.common.enums.CalendarScope;
+import com.readour.common.enums.ErrorCode;
+import com.readour.common.exception.CustomException;
+import com.readour.common.security.UserPrincipal;
 import com.readour.common.service.CalendarService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -18,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -33,6 +37,13 @@ public class CalendarController {
 
     private final CalendarService calendarService;
 
+    private Long getAuthenticatedUserId(UserPrincipal userPrincipal) {
+        if (userPrincipal == null) {
+            throw new CustomException(ErrorCode.UNAUTHORIZED, "인증이 필요합니다.");
+        }
+        return userPrincipal.getId();
+    }
+
     @Operation(summary = "캘린더 조회 (월별/주별)",
             description = "사용자의 캘린더 일정을 조회합니다. (viewType=WEEK 또는 MONTH, scope 파라미터 생략 시 USER+ROOM 모두 조회)")
     @ApiResponses(value = {
@@ -40,7 +51,7 @@ public class CalendarController {
     })
     @GetMapping("/events")
     public ResponseEntity<ApiResponseDto<List<CalendarEventResponseDto>>> getEvents(
-            @RequestHeader("X-User-Id") Long userId, // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE)
             @Schema(description = "조회 기준 날짜", example = "2025-11-10")
             LocalDate viewDate,
@@ -51,6 +62,7 @@ public class CalendarController {
             @Schema(description = "조회 범위 (USER 또는 ROOM). 생략 시 모두 조회", example = "USER")
             CalendarScope scope
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         List<CalendarEventResponseDto> events = calendarService.getEvents(userId, viewDate, viewType, scope);
 
         return ResponseEntity.ok(ApiResponseDto.<List<CalendarEventResponseDto>>builder()
@@ -69,8 +81,9 @@ public class CalendarController {
     @GetMapping("/events/{eventId}")
     public ResponseEntity<ApiResponseDto<CalendarEventResponseDto>> getEventDetail(
             @PathVariable Long eventId,
-            @RequestHeader("X-User-Id") Long userId // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         CalendarEventResponseDto event = calendarService.getEventDetail(eventId, userId);
         return ResponseEntity.ok(ApiResponseDto.<CalendarEventResponseDto>builder()
                 .status(HttpStatus.OK.value())
@@ -87,9 +100,10 @@ public class CalendarController {
     })
     @PostMapping("/events")
     public ResponseEntity<ApiResponseDto<CalendarEventResponseDto>> createEvent(
-            @RequestHeader("X-User-Id") Long userId, // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @Valid @RequestBody CalendarEventCreateRequestDto requestDto
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         CalendarEventResponseDto event = calendarService.createEvent(userId, requestDto);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponseDto.<CalendarEventResponseDto>builder()
                 .status(HttpStatus.CREATED.value())
@@ -107,9 +121,10 @@ public class CalendarController {
     @PutMapping("/events/{eventId}")
     public ResponseEntity<ApiResponseDto<CalendarEventResponseDto>> updateEvent(
             @PathVariable Long eventId,
-            @RequestHeader("X-User-Id") Long userId, // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @Valid @RequestBody CalendarEventUpdateRequestDto requestDto
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         CalendarEventResponseDto event = calendarService.updateEvent(eventId, userId, requestDto);
         return ResponseEntity.ok(ApiResponseDto.<CalendarEventResponseDto>builder()
                 .status(HttpStatus.OK.value())
@@ -126,8 +141,9 @@ public class CalendarController {
     @DeleteMapping("/events/{eventId}")
     public ResponseEntity<ApiResponseDto<Void>> deleteEvent(
             @PathVariable Long eventId,
-            @RequestHeader("X-User-Id") Long userId // TODO: 인증 기능으로 교체
+            @AuthenticationPrincipal UserPrincipal userPrincipal
     ) {
+        Long userId = getAuthenticatedUserId(userPrincipal);
         calendarService.deleteEvent(eventId, userId);
         return ResponseEntity.ok(ApiResponseDto.<Void>builder()
                 .status(HttpStatus.OK.value())

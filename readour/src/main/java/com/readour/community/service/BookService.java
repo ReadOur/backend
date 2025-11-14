@@ -411,6 +411,9 @@ public class BookService {
     // 위시리스트 토글
     @Transactional
     public boolean toggleWishlist(Long bookId, Long userId) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+
         // 1. 책 존재 여부 확인
         if (!bookRepository.existsById(bookId)) {
             throw new CustomException(ErrorCode.NOT_FOUND, "Book not found with id: " + bookId);
@@ -437,6 +440,9 @@ public class BookService {
     // (SD-27) 책 리뷰 작성
     @Transactional
     public BookReviewResponseDto addBookReview(Long bookId, Long userId, BookReviewCreateRequestDto dto) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+
         // 1. 책 존재 여부 확인
         if (!bookRepository.existsById(bookId)) {
             throw new CustomException(ErrorCode.NOT_FOUND, "Book not found with id: " + bookId);
@@ -519,6 +525,9 @@ public class BookService {
     // (SD-29) 책 리뷰 삭제
     @Transactional
     public void deleteBookReview(Long reviewId, Long userId) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+
         // 1. 삭제 권한 확인 (리뷰 ID + 작성자 ID)
         BookReview review = bookReviewRepository.findByReviewIdAndUserId(reviewId, userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.FORBIDDEN, "리뷰를 삭제할 권한이 없거나 리뷰가 존재하지 않습니다."));
@@ -619,15 +628,15 @@ public class BookService {
     public Page<LibrarySearchResponseDto> searchLibraries(String region, String dtlRegion, Pageable pageable) {
 
         UriComponentsBuilder uriBuilder = UriComponentsBuilder
-                .fromUriString(baseUrl + "/libSrch") // 👈 [1] API #1 (/libSrch) 호출
+                .fromUriString(baseUrl + "/libSrch")
                 .queryParam("authKey", apiKey)
-                .queryParam("region", region) // 👈 [2] 필수 지역 코드 (예: "11" 서울)
+                .queryParam("region", region) // 필수 지역 코드 (예: "11" 서울)
                 .queryParam("pageNo", pageable.getPageNumber() + 1)
                 .queryParam("pageSize", pageable.getPageSize())
                 .queryParam("format", "json");
 
         if (dtlRegion != null && !dtlRegion.isBlank()) {
-            uriBuilder.queryParam("dtl_region", dtlRegion); // 👈 [3] 선택 세부 지역 코드 (예: "11010" 종로구)
+            uriBuilder.queryParam("dtl_region", dtlRegion); // 선택 세부 지역 코드 (예: "11010" 종로구)
         }
 
         URI uri = uriBuilder.build().encode().toUri();
@@ -694,6 +703,9 @@ public class BookService {
     // (SD-34-2) 사용자 선호 도서관 삭제
     @Transactional
     public void deleteInterestedLibrary(Long userId, String libraryCode) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+
         UserInterestedLibraryId id = new UserInterestedLibraryId(userId, libraryCode);
 
         UserInterestedLibrary entity = userInterestedLibraryRepository.findById(id)
@@ -705,6 +717,9 @@ public class BookService {
     // (Helper) 사용자 선호 도서관 목록 조회
     @Transactional(readOnly = true)
     public List<UserLibraryResponseDto> getInterestedLibraries(Long userId) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+
         return userInterestedLibraryRepository.findByUserId(userId).stream()
                 .map(UserLibraryResponseDto::fromEntity)
                 .collect(Collectors.toList());
@@ -713,6 +728,10 @@ public class BookService {
     // (SD-34) 선호 도서관 대상, 책 대출 가능 여부 조회
     @Transactional(readOnly = true)
     public List<LibraryAvailabilityDto> checkBookAvailability(Long userId, String isbn13) {
+        if (userId == null) {
+            return new ArrayList<>();
+        }
+
         // 1. 사용자의 선호 도서관 목록 조회
         List<UserInterestedLibrary> libraries = userInterestedLibraryRepository.findByUserId(userId);
         if (libraries.isEmpty()) {

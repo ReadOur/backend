@@ -168,7 +168,7 @@ public class MyLibraryService {
         }
     }
 
-    // [Helper] [수정] User를 반환하도록 변경
+    // [Helper] User를 반환하도록 변경
     private User validateAndGetUser(Long userId) {
         return userRepository.findById(userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
