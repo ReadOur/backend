@@ -22,7 +22,7 @@ public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final JwtAuthenticationEntryPoint jwtAuthenticationEntryPoint;
-    @Value("${security.auth.disabled:true}")
+    @Value("${security.auth.disabled:false}")
     private boolean securityDisabled;
 
     @Bean

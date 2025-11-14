@@ -1,6 +1,7 @@
 package com.readour.community.service;
 
 import com.readour.common.dto.FileResponseDto;
+import com.readour.common.security.UserPrincipal;
 import com.readour.community.entity.*;
 import com.readour.common.entity.FileAsset;
 import com.readour.common.entity.User;
@@ -15,16 +16,14 @@ import com.readour.community.enums.PostCategory;
 import com.readour.community.enums.PostSearchType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.*;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Collections;
-import java.util.Set;
-import java.util.List;
-import java.util.Optional;
+import java.time.LocalDateTime;
+import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -41,7 +40,161 @@ public class CommunityService {
     private final UserRepository userRepository;
     private final BookRepository bookRepository;
     private final PostSpecification postSpecification;
+    private final BookService bookService;
     private final FileAssetService fileAssetService;
+    private static final int PREVIEW_SIZE = 5;  // MY PAGE
+    private static final int MAX_LIST_SIZE = 10;    // MAIN PAGE
+    private static final Sort DESC_BY_CREATED = Sort.by(Sort.Direction.DESC, "createdAt");
+
+    // =============================================
+    // --- MAIN PAGE ---
+    // =============================================
+
+    public MainPageResponseDto getMainPageData(UserPrincipal currentUser) {
+
+        Long currentUserId = (currentUser != null) ? currentUser.getId() : null;
+
+        // 1. 주간 인기 게시글 (좋아요 순, 10개)
+        Pageable popularPostPageable = PageRequest.of(0, MAX_LIST_SIZE); // (정렬은 @Query에서 처리)
+        LocalDateTime oneWeekAgo = LocalDateTime.now().minusWeeks(1);
+
+        Page<Post> popularPostPage = postRepository.findPopularPostsSince(oneWeekAgo, popularPostPageable);
+        List<PostSummaryDto> popularPosts = convertToPostSummaryPage(popularPostPage, currentUserId)
+                .getContent();
+
+        // 2. 모집 게시글 (최신순, 10개)
+        Pageable recruitmentPageable = PageRequest.of(0, MAX_LIST_SIZE); // (정렬은 @Query에서 처리)
+
+        Page<Post> recruitmentPostPage = postRepository.findRecruitmentPosts(
+                PostCategory.GROUP,
+                RecruitmentStatus.RECRUITING,
+                recruitmentPageable
+        );
+        List<PostSummaryDto> recruitmentPosts = convertToPostSummaryPage(recruitmentPostPage, currentUserId)
+                .getContent();
+
+        // 3. 인기 도서 (회원 맞춤형, 10개)
+        Pageable popularBookPageable = PageRequest.of(0, MAX_LIST_SIZE);
+
+        MainPagePopularBookDto popularBooksResult;
+
+        try {
+            popularBooksResult = bookService.getPopularBooks(currentUser, popularBookPageable);
+        } catch (Exception e) {
+            log.warn("메인 페이지 - 인기 도서 API 호출에 실패했습니다. (외부 API 오류일 수 있음): {}", e.getMessage());
+            popularBooksResult = MainPagePopularBookDto.builder()
+                    .criteria("오류")
+                    .popularBooks(Page.empty(popularBookPageable))
+                    .build();
+        }
+
+        // 4. DTO로 조립
+        return MainPageResponseDto.builder()
+                .popularPosts(popularPosts)
+                .recruitmentPosts(recruitmentPosts)
+                .popularBooks(popularBooksResult)
+                .build();
+    }
+
+    // =============================================
+    // --- MY PAGE ---
+    // =============================================
+
+    /**
+     * 마이페이지 미리보기 데이터 조회
+     */
+    public MyPageResponseDto getMyPageData(Long userId) {
+        User user = validateAndGetUser(userId);
+
+        // 1. 최신 5개씩 조회 (Pageable 생성)
+        Pageable previewPageable = PageRequest.of(0, PREVIEW_SIZE, DESC_BY_CREATED);
+
+        // 2. 각 페이징 메서드를 호출 (이 메서드들은 이제 N+1을 처리함)
+        List<PostSummaryDto> myPosts = getMyPosts(userId, previewPageable).getPostPage().getContent();
+        List<MyCommentDto> myComments = getMyComments(userId, previewPageable).getCommentPage().getContent();
+        List<PostSummaryDto> likedPosts = getLikedPosts(userId, previewPageable).getLikedPostsPage().getContent();
+
+        return MyPageResponseDto.from(user, myPosts, myComments, likedPosts);
+    }
+
+    /**
+     * 내가 쓴 게시글 페이징 조회
+     */
+    public MyPagePostsPageDto getMyPosts(Long userId, Pageable pageable) {
+        User user = validateAndGetUser(userId);
+        Page<Post> postPage = postRepository.findByUserIdAndIsDeletedFalse(userId, pageable);
+
+        // Post -> PostSummaryDto 변환
+        Page<PostSummaryDto> postDtoPage = convertToPostSummaryPage(postPage, userId);
+
+        return MyPagePostsPageDto.from(user, postDtoPage);
+    }
+
+    /**
+     * 내가 쓴 댓글 페이징 조회
+     */
+    public MyPageCommentsPageDto getMyComments(Long userId, Pageable pageable) {
+        User user = validateAndGetUser(userId);
+        // 1. 내 댓글 조회
+        Page<Comment> commentPage = commentRepository.findByUserIdAndIsDeletedFalse(userId, pageable);
+
+        // 2. N+1 방지: 댓글의 원본 Post 정보 조회
+        Set<Long> postIds = commentPage.getContent().stream().map(Comment::getPostId).collect(Collectors.toSet());
+        Map<Long, Post> postMap = postRepository.findAllById(postIds).stream()
+                .collect(Collectors.toMap(Post::getPostId, Function.identity()));
+
+        // 3. DTO 변환
+        Page<MyCommentDto> commentDtoPage = commentPage.map(comment -> MyCommentDto.fromEntities(comment, postMap.get(comment.getPostId())));
+
+        return MyPageCommentsPageDto.from(user, commentDtoPage);
+    }
+
+    /**
+     * 내가 좋아요 누른 글 페이징 조회
+     */
+    public MyPageLikedPostsPageDto getLikedPosts(Long userId, Pageable pageable) {
+        User user = validateAndGetUser(userId);
+        // 1. 내가 누른 '좋아요'를 페이징
+        Page<PostLike> likePage = postLikeRepository.findAllByIdUserId(userId, pageable);
+
+        // 2. '좋아요'에서 Post ID 목록 추출
+        List<Long> postIds = likePage.getContent().stream()
+                .map(like -> like.getId().getPostId())
+                .toList();
+
+        if (postIds.isEmpty()) {
+            return MyPageLikedPostsPageDto.from(user, Page.empty(pageable)); // 👈 빈 페이지 반환
+        }
+
+        // 3. Post ID 목록으로 실제 Post 정보 조회
+        Map<Long, Post> postMap = postRepository.findAllById(postIds).stream()
+                .collect(Collectors.toMap(Post::getPostId, Function.identity()));
+
+        Set<Long> appliedRecruitmentIds = (userId != null)
+                ? recruitmentMemberRepository.findAllRecruitmentIdsByUserId(userId)
+                : Collections.emptySet();
+
+        // 4. Post -> PostSummaryDto 변환 (likePage의 순서대로)
+        List<PostSummaryDto> dtoList = postIds.stream()
+                .map(postMap::get)
+                .filter(Objects::nonNull)
+                .map(post -> convertPostToPostSummaryDto(post, userId, appliedRecruitmentIds))
+                .toList();
+
+        Page<PostSummaryDto> likedPostDtoPage = new PageImpl<>(dtoList, pageable, likePage.getTotalElements());
+
+        return MyPageLikedPostsPageDto.from(user, likedPostDtoPage);
+    }
+
+    // [Helper] 사용자 검증
+    private User validateAndGetUser(Long userId) {
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+    }
+
+    // =============================================
+    // --- COMMUNITY SERVICE ---
+    // =============================================
 
     @Transactional(readOnly = true) // Use readOnly for read operations
     public Page<PostSummaryDto> getPostList(Pageable pageable, Long currentUserId, PostCategory category) {
@@ -56,7 +209,7 @@ public class CommunityService {
             postPage = postRepository.findAllByIsDeletedFalse(pageable);
         }
 
-        return postPage.map(post -> convertToPostSummaryDto(post, currentUserId, appliedRecruitmentIds));
+        return postPage.map(post -> convertPostToPostSummaryDto(post, currentUserId, appliedRecruitmentIds));
     }
 
     // bookId로 게시글 목록 조회
@@ -69,7 +222,7 @@ public class CommunityService {
 
         Page<Post> postPage = postRepository.findAllByBookBookIdAndIsDeletedFalse(bookId, pageable);
 
-        return postPage.map(post -> convertToPostSummaryDto(post, currentUserId, appliedRecruitmentIds));
+        return postPage.map(post -> convertPostToPostSummaryDto(post, currentUserId, appliedRecruitmentIds));
     }
 
     @Transactional(readOnly = true)
@@ -81,7 +234,7 @@ public class CommunityService {
         Specification<Post> spec = postSpecification.search(searchType, keyword, category);
         Page<Post> postPage = postRepository.findAll(spec, pageable); // (Fetch Join은 Spec과 함께 쓰기 까다로우므로 N+1 발생 가능성 있음)
 
-        return postPage.map(post -> convertToPostSummaryDto(post, currentUserId, appliedRecruitmentIds));
+        return postPage.map(post -> convertPostToPostSummaryDto(post, currentUserId, appliedRecruitmentIds));
     }
 
     @Transactional
@@ -381,16 +534,79 @@ public class CommunityService {
     }
 
     // [Helper] Post -> PostSummaryDto 변환
-    private PostSummaryDto convertToPostSummaryDto(Post post, Long currentUserId, Set<Long> appliedRecruitmentIds) {
+    private PostSummaryDto convertPostToPostSummaryDto(Post post, Long currentUserId, Set<Long> appliedRecruitmentIds) {
         Long likeCount = postLikeRepository.countByIdPostId(post.getPostId());
         Long commentCount = commentRepository.countByPostIdAndIsDeletedFalse(post.getPostId());
-        Boolean isLiked = (currentUserId == null) ? false : postLikeRepository.existsByIdPostIdAndIdUserId(post.getPostId(), currentUserId);
+        Boolean isLiked = currentUserId != null && postLikeRepository.existsByIdPostIdAndIdUserId(post.getPostId(), currentUserId);
 
         Boolean isApplied = false;
-        if (post.getRecruitment() != null && currentUserId != null) {
+        if (currentUserId != null && post.getCategory() == PostCategory.GROUP && post.getRecruitment() != null) {
             isApplied = appliedRecruitmentIds.contains(post.getRecruitment().getRecruitmentId());
         }
 
         return PostSummaryDto.fromEntity(post, likeCount, commentCount, isLiked, isApplied);
+    }
+
+    // [Helper] Post Page -> PostSummaryDto Page 변환 (N+1 방지)
+    private Page<PostSummaryDto> convertToPostSummaryPage(Page<Post> postPage, Long currentUserId) {
+        List<Post> posts = postPage.getContent();
+        if (posts.isEmpty()) {
+            return Page.empty(postPage.getPageable());
+        }
+
+        List<Long> postIds = posts.stream().map(Post::getPostId).toList();
+
+        // --- N+1 방지 일괄(Bulk) 조회 ---
+
+        // 1. 좋아요 수 조회 (Map<PostId, LikeCount>)
+        Map<Long, Long> likeCountMap = postLikeRepository.findLikeCountsByPostIds(postIds).stream()
+                .collect(Collectors.toMap(
+                        map -> (Long) map.get("postId"),
+                        map -> (Long) map.get("likeCount")
+                ));
+
+        // 2. 댓글 수 조회 (Map<PostId, CommentCount>)
+        Map<Long, Long> commentCountMap = commentRepository.findCommentCountsByPostIds(postIds).stream()
+                .collect(Collectors.toMap(
+                        map -> (Long) map.get("postId"),
+                        map -> (Long) map.get("commentCount")
+                ));
+
+        // 3. '내'가 좋아요/지원했는지 여부 조회 (Set<PostId / RecruitmentId>)
+        Set<Long> likedPostIds = Collections.emptySet();
+        Set<Long> appliedRecruitmentIds = Collections.emptySet();
+
+        if (currentUserId != null) {
+            likedPostIds = postLikeRepository.findLikedPostIdsByUserId(currentUserId, postIds);
+
+            // GROUP 카테고리의 Recruitment ID 목록 추출
+            List<Long> recruitmentIds = posts.stream()
+                    .filter(p -> p.getCategory() == PostCategory.GROUP && p.getRecruitment() != null)
+                    .map(p -> p.getRecruitment().getRecruitmentId())
+                    .toList();
+
+            if (!recruitmentIds.isEmpty()) {
+                appliedRecruitmentIds = recruitmentMemberRepository
+                        .findAppliedRecruitmentIdsByUserIdAndRecruitmentIdIn(currentUserId, recruitmentIds);
+            }
+        }
+
+        // --- 맵(Map)을 사용하여 DTO 조립 (DB 접근 X) ---
+
+        final Set<Long> finalLikedPostIds = likedPostIds;
+        final Set<Long> finalAppliedRecruitmentIds = appliedRecruitmentIds;
+
+        return postPage.map(post -> {
+            Long likeCount = likeCountMap.getOrDefault(post.getPostId(), 0L);
+            Long commentCount = commentCountMap.getOrDefault(post.getPostId(), 0L);
+            Boolean isLiked = finalLikedPostIds.contains(post.getPostId());
+
+            Boolean isApplied = false;
+            if (post.getCategory() == PostCategory.GROUP && post.getRecruitment() != null) {
+                isApplied = finalAppliedRecruitmentIds.contains(post.getRecruitment().getRecruitmentId());
+            }
+
+            return PostSummaryDto.fromEntity(post, likeCount, commentCount, isLiked, isApplied);
+        });
     }
 }

@@ -2,11 +2,15 @@ package com.readour.community.controller;
 
 import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
+import com.readour.common.enums.ErrorCode;
+import com.readour.common.exception.CustomException;
+import com.readour.common.security.UserPrincipal;
 import com.readour.community.dto.*;
 import com.readour.community.enums.PostCategory;
 import com.readour.community.enums.PostSearchType;
 import com.readour.community.service.CommunityService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -18,15 +22,24 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/community")
 @RequiredArgsConstructor
+@SecurityRequirement(name = "bearerAuth")
 public class CommunityController {
 
     private final CommunityService communityService;
+
+    private Long getAuthenticatedUserId(UserPrincipal userPrincipal) {
+        if (userPrincipal == null) {
+            throw new CustomException(ErrorCode.UNAUTHORIZED, "인증이 필요합니다.");
+        }
+        return userPrincipal.getId();
+    }
 
     // (SD-18: 게시글 검색)
     @Operation(summary = "게시글 검색")
@@ -43,9 +56,10 @@ public class CommunityController {
             @RequestParam PostSearchType type,
             @RequestParam String keyword,
             @RequestParam(required = false) PostCategory category,
-            @ParameterObject Pageable pageable
+            @ParameterObject Pageable pageable,
+            @AuthenticationPrincipal UserPrincipal userPrincipal
     ) {
-        Long currentUserId = 1L; // TODO: Get authenticated user ID. 비회원은 null
+        Long currentUserId = (userPrincipal != null) ? userPrincipal.getId() : null;
         Page<PostSummaryDto> postPage = communityService.searchPosts(type, keyword, category, pageable, currentUserId);
 
         ApiResponseDto<Page<PostSummaryDto>> response = ApiResponseDto.<Page<PostSummaryDto>>builder()
@@ -65,8 +79,11 @@ public class CommunityController {
                     content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
     @PostMapping("/posts/{postId}/like")
-    public ResponseEntity<ApiResponseDto<Map<String,Boolean>>> likePost(@PathVariable Long postId) {
-        Long currentUserId = 1L; // TODO: Replace with actual authenticated user ID, 비회원 접근 금지
+    public ResponseEntity<ApiResponseDto<Map<String,Boolean>>> likePost(
+            @PathVariable Long postId,
+            @AuthenticationPrincipal UserPrincipal userPrincipal
+    ) {
+        Long currentUserId = getAuthenticatedUserId(userPrincipal);
         boolean isLiked = communityService.toggleLike(postId, currentUserId);
 
         ApiResponseDto<Map<String, Boolean>> response = ApiResponseDto.<Map<String, Boolean>>builder()
@@ -86,8 +103,11 @@ public class CommunityController {
                     content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
     @PostMapping("/posts")
-    public ResponseEntity<ApiResponseDto<PostResponseDto>> createPost(@RequestBody PostCreateRequestDto requestDto) {
-        Long currentUserId = 1L; // TODO: Replace with actual authenticated user ID
+    public ResponseEntity<ApiResponseDto<PostResponseDto>> createPost(
+            @RequestBody PostCreateRequestDto requestDto,
+            @AuthenticationPrincipal UserPrincipal userPrincipal
+    ) {
+        Long currentUserId = getAuthenticatedUserId(userPrincipal);
 
         PostResponseDto createdPost = communityService.createPost(requestDto, currentUserId);
 
@@ -109,8 +129,11 @@ public class CommunityController {
                     content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
     @GetMapping("/posts/{postId}")
-    public ResponseEntity<ApiResponseDto<PostResponseDto>> getPostDetail(@PathVariable Long postId) {
-        Long currentUserId = 1L; // TODO: Get authenticated user Id. 비회원은 null
+    public ResponseEntity<ApiResponseDto<PostResponseDto>> getPostDetail(
+            @PathVariable Long postId,
+            @AuthenticationPrincipal UserPrincipal userPrincipal
+    ) {
+        Long currentUserId = (userPrincipal != null) ? userPrincipal.getId() : null;
         PostResponseDto postDetail = communityService.getPostDetail(postId, currentUserId);
 
         ApiResponseDto<PostResponseDto> response = ApiResponseDto.<PostResponseDto>builder()
@@ -147,9 +170,10 @@ public class CommunityController {
     @GetMapping("/posts")
     public ResponseEntity<ApiResponseDto<Page<PostSummaryDto>>> getPostList(
             @ParameterObject Pageable pageable,
-            @RequestParam(required = false) PostCategory category
+            @RequestParam(required = false) PostCategory category,
+            @AuthenticationPrincipal UserPrincipal userPrincipal
     ) {
-        Long currentUserId = 1L; // TODO: Get authenticated user Id. 비회원은 null
+        Long currentUserId = (userPrincipal != null) ? userPrincipal.getId() : null;
 
         Page<PostSummaryDto> postPage = communityService.getPostList(pageable, currentUserId, category);
 
@@ -172,9 +196,12 @@ public class CommunityController {
                     content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
     @PutMapping("/posts/{postId}")
-    public ResponseEntity<ApiResponseDto<PostResponseDto>> updatePost(@PathVariable Long postId,
-                                                                      @RequestBody PostUpdateRequestDto requestDto) {
-        Long currentUserId = 1L; // TODO: Replace with actual authenticated user ID
+    public ResponseEntity<ApiResponseDto<PostResponseDto>> updatePost(
+            @PathVariable Long postId,
+            @RequestBody PostUpdateRequestDto requestDto,
+            @AuthenticationPrincipal UserPrincipal userPrincipal
+    ) {
+        Long currentUserId = getAuthenticatedUserId(userPrincipal);
         PostResponseDto updatedPost = communityService.updatePost(postId, requestDto, currentUserId);
 
         ApiResponseDto<PostResponseDto> response = ApiResponseDto.<PostResponseDto>builder()
@@ -197,8 +224,11 @@ public class CommunityController {
                     content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
     @DeleteMapping("/posts/{postId}")
-    public ResponseEntity<ApiResponseDto<Void>> deletePost(@PathVariable Long postId) {
-        Long currentUserId = 1L; // TODO: Replace with actual authenticated user ID
+    public ResponseEntity<ApiResponseDto<Void>> deletePost(
+            @PathVariable Long postId,
+            @AuthenticationPrincipal UserPrincipal userPrincipal
+    ) {
+        Long currentUserId = getAuthenticatedUserId(userPrincipal);
         communityService.deletePost(postId, currentUserId);
 
         ApiResponseDto<Void> response = ApiResponseDto.<Void>builder()
@@ -221,9 +251,12 @@ public class CommunityController {
                     content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
     @PostMapping("/posts/{postId}/comments")
-    public ResponseEntity<ApiResponseDto<CommentResponseDto>> addComment(@PathVariable Long postId,
-                                                                         @RequestBody CommentCreateRequestDto requestDto) {
-        Long currentUserId = 1L; // TODO: Replace with actual authenticated user ID
+    public ResponseEntity<ApiResponseDto<CommentResponseDto>> addComment(
+            @PathVariable Long postId,
+            @RequestBody CommentCreateRequestDto requestDto,
+            @AuthenticationPrincipal UserPrincipal userPrincipal
+    ) {
+        Long currentUserId = getAuthenticatedUserId(userPrincipal);
         CommentResponseDto createdComment = communityService.addComment(postId, requestDto, currentUserId);
 
         ApiResponseDto<CommentResponseDto> response = ApiResponseDto.<CommentResponseDto>builder()
@@ -246,9 +279,12 @@ public class CommunityController {
                     content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
     @PutMapping("/comments/{commentId}")
-    public ResponseEntity<ApiResponseDto<CommentResponseDto>> updateComment(@PathVariable Long commentId,
-                                                                            @RequestBody CommentUpdateRequestDto requestDto) {
-        Long currentUserId = 1L; // TODO: Replace with actual authenticated user ID
+    public ResponseEntity<ApiResponseDto<CommentResponseDto>> updateComment(
+            @PathVariable Long commentId,
+            @RequestBody CommentUpdateRequestDto requestDto,
+            @AuthenticationPrincipal UserPrincipal userPrincipal
+    ) {
+        Long currentUserId = getAuthenticatedUserId(userPrincipal);
         CommentResponseDto updatedComment = communityService.updateComment(commentId, requestDto, currentUserId);
 
         ApiResponseDto<CommentResponseDto> response = ApiResponseDto.<CommentResponseDto>builder()
@@ -271,8 +307,11 @@ public class CommunityController {
                     content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
     @DeleteMapping("/comments/{commentId}")
-    public ResponseEntity<ApiResponseDto<Void>> deleteComment(@PathVariable Long commentId) {
-        Long currentUserId = 1L; // TODO: Replace with actual authenticated user ID
+    public ResponseEntity<ApiResponseDto<Void>> deleteComment(
+            @PathVariable Long commentId,
+            @AuthenticationPrincipal UserPrincipal userPrincipal
+    ) {
+        Long currentUserId = getAuthenticatedUserId(userPrincipal);
         communityService.deleteComment(commentId, currentUserId);
 
         ApiResponseDto<Void> response = ApiResponseDto.<Void>builder()

@@ -6,6 +6,8 @@ import com.readour.common.entity.User;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.enums.Gender;
 import com.readour.common.exception.CustomException;
+import com.readour.common.repository.UserRepository;
+import com.readour.common.security.UserPrincipal;
 import com.readour.community.dto.*;
 import com.readour.community.dto.AverageRatingProjection;
 import com.readour.community.dto.LibraryApiDtos.SearchDoc;
@@ -14,6 +16,7 @@ import com.readour.community.entity.BookHighlight;
 import com.readour.community.entity.BookReview;
 import com.readour.community.entity.BookWishlist;
 import com.readour.community.entity.BookWishlistId;
+import com.readour.community.enums.BookSearchType;
 import com.readour.community.repository.BookWishlistRepository;
 import com.readour.community.entity.UserInterestedLibrary;
 import com.readour.community.entity.UserInterestedLibraryId;
@@ -21,7 +24,6 @@ import com.readour.community.repository.BookHighlightRepository;
 import com.readour.community.repository.BookRepository;
 import com.readour.community.repository.BookReviewRepository;
 import com.readour.community.repository.UserInterestedLibraryRepository;
-import com.readour.common.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -74,23 +76,29 @@ public class BookService {
         return bookRepository.findByBooknameContaining(title, pageable);
     }
 
-
     // 정보나루 API를 호출하여 도서를 검색합니다. (DB 저장 X)
     @Transactional(readOnly = true)
-    public Page<BookSummaryDto> searchBooksFromApi(String keyword, Pageable pageable) {
-        log.debug("Searching API for keyword: {}", keyword);
+    public Page<BookSummaryDto> searchBooksFromApi(BookSearchType type, String keyword, Pageable pageable) {
+        log.debug("Searching API for keyword: {} with type: {}", keyword, type);
 
         // 1. [API Search] 외부 API(#16) 호출
-        URI uri = UriComponentsBuilder
+        UriComponentsBuilder uriBuilder = UriComponentsBuilder
                 .fromUriString(baseUrl + "/srchBooks")
                 .queryParam("authKey", apiKey)
                 .queryParam("keyword", keyword)
                 .queryParam("pageNo", pageable.getPageNumber() + 1)
                 .queryParam("pageSize", pageable.getPageSize())
-                .queryParam("format", "json")
-                .build()
-                .encode()
-                .toUri();
+                .queryParam("format", "json");
+
+        if (type == BookSearchType.AUTHOR) {
+            uriBuilder.queryParam("author", keyword);
+        } else if (type == BookSearchType.KEYWORD) {
+            uriBuilder.queryParam("keyword", keyword);
+        } else {    // DEFAULT TITLE
+            uriBuilder.queryParam("title", keyword);
+        }
+
+        URI uri = uriBuilder.build().encode().toUri();
 
         try {
             String jsonResponse = restTemplate.getForObject(uri, String.class);
@@ -197,19 +205,12 @@ public class BookService {
     }
 
     // 사용자 정보(성별, 연령)를 기반으로 인기대출도서 API(#3)를 호출합니다.(Wrapper DTO 사용 O)
+    // 비회원일 경우, 전체 인기 도서 반환
     @Transactional(readOnly = true)
-    public Page<PopularBookDto> getPopularBooks(Long userId, Pageable pageable) {
-        // 1. 사용자 정보 조회 (성별, 연령 확인용)
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+    public MainPagePopularBookDto getPopularBooks(UserPrincipal currentUser, Pageable pageable) {
+        log.debug("Getting popular books...");
 
-        // 2. API 파라미터로 변환
-        String genderCode = mapGenderToApiCode(user.getGender());
-        String ageCode = mapBirthDateToApiAgeCode(user.getBirthDate());
-
-        log.debug("Fetching popular books for userId: {}. genderCode: {}, ageCode: {}", userId, genderCode, ageCode);
-
-        // 3. API URI 빌드 (API #3 - loanItemSrch)
+        // (API 호출을 위한 파라미터 준비)
         UriComponentsBuilder uriBuilder = UriComponentsBuilder
                 .fromUriString(baseUrl + "/loanItemSrch")
                 .queryParam("authKey", apiKey)
@@ -217,18 +218,37 @@ public class BookService {
                 .queryParam("pageSize", pageable.getPageSize())
                 .queryParam("format", "json");
 
-        if (genderCode != null) {
-            uriBuilder.queryParam("gender", genderCode);
-        }
-        if (ageCode != null) {
-            uriBuilder.queryParam("age", ageCode);
+        String criteria;
+
+        if (currentUser != null) {
+            User user = userRepository.findById(currentUser.getId())
+                    .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + currentUser.getId()));
+            String genderCode = mapGenderToApiCode(user.getGender());
+            String ageCode = mapBirthDateToApiAgeCode(user.getBirthDate());
+
+            String ageDesc = mapBirthDateToDescription(user.getBirthDate());
+            String genderDesc = mapGenderToDescription(user.getGender());
+
+            criteria = (ageDesc.isBlank() ? "" : ageDesc) + (ageDesc.isBlank() || genderDesc.isBlank() ? "" : " ") + genderDesc;
+            if (criteria.isBlank()) criteria = "회원";
+
+            log.debug("Fetching popular books for userId: {}. genderCode: {}, ageCode: {}", user.getId(), genderCode, ageCode);
+            if (genderCode != null) {
+                uriBuilder.queryParam("gender", genderCode);
+            }
+            if (ageCode != null) {
+                uriBuilder.queryParam("age", ageCode);
+            }
+        } else {
+            log.debug("Get popular books for non-authenticated user.");
+            criteria = "전체";
         }
 
         URI uri = uriBuilder.build()
                 .encode()
                 .toUri();
 
-        // 4. API 호출 및 파싱
+        // API 호출 및 파싱
         try {
             String jsonResponse = restTemplate.getForObject(uri, String.class);
             log.info("External API Response JSON for popular books: {}", jsonResponse);
@@ -237,7 +257,10 @@ public class BookService {
 
             if (wrapper == null || wrapper.getResponse() == null || wrapper.getResponse().getDocs() == null) {
                 log.warn("Popular books API response is empty or malformed.");
-                return Page.empty(pageable);
+                return MainPagePopularBookDto.builder()
+                        .criteria(criteria)
+                        .popularBooks(Page.empty(pageable))
+                        .build();
             }
 
             LibraryApiDtos.PopularBookResponse response = wrapper.getResponse();
@@ -247,7 +270,12 @@ public class BookService {
                     .map(PopularBookDto::from)                   // PopularBookDoc -> PopularBookDto
                     .collect(Collectors.toList());
 
-            return new PageImpl<>(popularBooks, pageable, response.getNumFound());
+            Page<PopularBookDto> bookPage = new PageImpl<>(popularBooks, pageable, response.getNumFound());
+
+            return MainPagePopularBookDto.builder()
+                    .criteria(criteria)
+                    .popularBooks(bookPage)
+                    .build();
 
         } catch (Exception e) {
             log.error("Failed to fetch popular books from API. URI: " + uri, e);
@@ -309,7 +337,7 @@ public class BookService {
                 throw new CustomException(ErrorCode.NOT_FOUND, "API에서 도서 정보를 찾을 수 없습니다. ISBN: " + isbn13);
             }
 
-            // [3] [3] "detail" 리스트의 첫 번째 항목(get(0))에서 book 정보를 반환합니다.
+            // [3] "detail" 리스트의 첫 번째 항목(get(0))에서 book 정보를 반환합니다.
             return wrapper.getResponse().getDetail().get(0).getBook();
 
         } catch (JsonProcessingException e) {
@@ -382,6 +410,21 @@ public class BookService {
         }
     }
 
+    // 성별을 UI 문자열로 변환
+    private String mapGenderToDescription(Gender gender) {
+        if (gender == null) {
+            return "";
+        }
+        switch (gender) {
+            case MALE:
+                return "남성";
+            case FEMALE:
+                return "여성";
+            default:
+                return "";
+        }
+    }
+
     // 생년월일을 API 연령 코드(0, 6, 8, 14, 20, 30...)로 변환
     private String mapBirthDateToApiAgeCode(LocalDate birthDate) {
         if (birthDate == null) {
@@ -397,9 +440,27 @@ public class BookService {
         return "60"; // 60: 60세 이상
     }
 
+    // 생년월일을 연령대 UI 문자열로 변환
+    private String mapBirthDateToDescription(LocalDate birthDate) {
+        if (birthDate == null) {
+            return "";
+        }
+        int age = Period.between(birthDate, LocalDate.now()).getYears();
+
+        if (age <= 19) return "10대";
+        if (age <= 29) return "20대";
+        if (age <= 39) return "30대";
+        if (age <= 49) return "40대";
+        if (age <= 59) return "50대";
+        return "60대 이상";
+    }
+
     // 위시리스트 토글
     @Transactional
     public boolean toggleWishlist(Long bookId, Long userId) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+
         // 1. 책 존재 여부 확인
         if (!bookRepository.existsById(bookId)) {
             throw new CustomException(ErrorCode.NOT_FOUND, "Book not found with id: " + bookId);
@@ -426,6 +487,9 @@ public class BookService {
     // (SD-27) 책 리뷰 작성
     @Transactional
     public BookReviewResponseDto addBookReview(Long bookId, Long userId, BookReviewCreateRequestDto dto) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+
         // 1. 책 존재 여부 확인
         if (!bookRepository.existsById(bookId)) {
             throw new CustomException(ErrorCode.NOT_FOUND, "Book not found with id: " + bookId);
@@ -508,6 +572,9 @@ public class BookService {
     // (SD-29) 책 리뷰 삭제
     @Transactional
     public void deleteBookReview(Long reviewId, Long userId) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+
         // 1. 삭제 권한 확인 (리뷰 ID + 작성자 ID)
         BookReview review = bookReviewRepository.findByReviewIdAndUserId(reviewId, userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.FORBIDDEN, "리뷰를 삭제할 권한이 없거나 리뷰가 존재하지 않습니다."));
@@ -608,15 +675,15 @@ public class BookService {
     public Page<LibrarySearchResponseDto> searchLibraries(String region, String dtlRegion, Pageable pageable) {
 
         UriComponentsBuilder uriBuilder = UriComponentsBuilder
-                .fromUriString(baseUrl + "/libSrch") // 👈 [1] API #1 (/libSrch) 호출
+                .fromUriString(baseUrl + "/libSrch")
                 .queryParam("authKey", apiKey)
-                .queryParam("region", region) // 👈 [2] 필수 지역 코드 (예: "11" 서울)
+                .queryParam("region", region) // 필수 지역 코드 (예: "11" 서울)
                 .queryParam("pageNo", pageable.getPageNumber() + 1)
                 .queryParam("pageSize", pageable.getPageSize())
                 .queryParam("format", "json");
 
         if (dtlRegion != null && !dtlRegion.isBlank()) {
-            uriBuilder.queryParam("dtl_region", dtlRegion); // 👈 [3] 선택 세부 지역 코드 (예: "11010" 종로구)
+            uriBuilder.queryParam("dtl_region", dtlRegion); // 선택 세부 지역 코드 (예: "11010" 종로구)
         }
 
         URI uri = uriBuilder.build().encode().toUri();
@@ -683,6 +750,9 @@ public class BookService {
     // (SD-34-2) 사용자 선호 도서관 삭제
     @Transactional
     public void deleteInterestedLibrary(Long userId, String libraryCode) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+
         UserInterestedLibraryId id = new UserInterestedLibraryId(userId, libraryCode);
 
         UserInterestedLibrary entity = userInterestedLibraryRepository.findById(id)
@@ -694,6 +764,9 @@ public class BookService {
     // (Helper) 사용자 선호 도서관 목록 조회
     @Transactional(readOnly = true)
     public List<UserLibraryResponseDto> getInterestedLibraries(Long userId) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+
         return userInterestedLibraryRepository.findByUserId(userId).stream()
                 .map(UserLibraryResponseDto::fromEntity)
                 .collect(Collectors.toList());
@@ -702,6 +775,10 @@ public class BookService {
     // (SD-34) 선호 도서관 대상, 책 대출 가능 여부 조회
     @Transactional(readOnly = true)
     public List<LibraryAvailabilityDto> checkBookAvailability(Long userId, String isbn13) {
+        if (userId == null) {
+            return new ArrayList<>();
+        }
+
         // 1. 사용자의 선호 도서관 목록 조회
         List<UserInterestedLibrary> libraries = userInterestedLibraryRepository.findByUserId(userId);
         if (libraries.isEmpty()) {

@@ -2,6 +2,7 @@ package com.readour.community.repository;
 
 import com.readour.community.entity.Post;
 import com.readour.community.enums.PostCategory;
+import com.readour.community.enums.RecruitmentStatus;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,6 +12,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Repository
@@ -31,4 +33,30 @@ public interface PostRepository extends JpaRepository<Post, Long>, JpaSpecificat
 
     @Query("SELECT p FROM Post p LEFT JOIN FETCH p.recruitment WHERE p.category = :category AND p.isDeleted = false")
     Page<Post> findAllWithRecruitmentByCategoryAndIsDeletedFalse(@Param("category") PostCategory category, Pageable pageable);
+
+    /**
+     * (메인 페이지) 주간 인기 게시글 조회 (좋아요 순)
+     * (N+1 방지를 위해 Recruitment 정보도 Fetch Join)
+     */
+    @Query("SELECT p FROM Post p " +
+            "LEFT JOIN FETCH p.recruitment " +
+            "LEFT JOIN PostLike pl ON p.postId = pl.id.postId " +
+            "WHERE p.isDeleted = false AND p.createdAt >= :since " +
+            "GROUP BY p.postId " +
+            "ORDER BY COUNT(pl.id.postId) DESC, p.createdAt DESC")
+    Page<Post> findPopularPostsSince(@Param("since") LocalDateTime since, Pageable pageable);
+
+    /**
+     * (메인 페이지) 모집 게시글 조회 (최신순)
+     * (N+1 방지를 위해 Recruitment 정보도 Fetch Join)
+     */
+    @Query("SELECT p FROM Post p " +
+            "LEFT JOIN FETCH p.recruitment r " +
+            "WHERE p.isDeleted = false " +
+            "AND p.category = :category " +
+            "AND r.status = :status " +
+            "ORDER BY p.createdAt DESC")
+    Page<Post> findRecruitmentPosts(@Param("category") PostCategory category,
+                                    @Param("status") RecruitmentStatus status,
+                                    Pageable pageable);
 }
