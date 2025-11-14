@@ -8,6 +8,7 @@ import com.readour.community.service.RecruitmentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -21,6 +22,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/community/recruitments")
 @RequiredArgsConstructor
+@SecurityRequirement(name = "bearerAuth")
 public class RecruitmentController {
 
     private final RecruitmentService recruitmentService;

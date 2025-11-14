@@ -5,6 +5,7 @@ import com.readour.common.security.UserPrincipal;
 import com.readour.community.dto.MainPageResponseDto;
 import com.readour.community.service.CommunityService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/main-page")
 @RequiredArgsConstructor
+@SecurityRequirement(name = "bearerAuth")
 public class MainPageController {
 
     private final CommunityService communityService;

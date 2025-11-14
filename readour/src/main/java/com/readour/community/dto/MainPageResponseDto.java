@@ -4,7 +4,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
-import org.springframework.data.domain.Page;
 
 import java.util.List;
 
@@ -21,5 +20,5 @@ public class MainPageResponseDto {
     private List<PostSummaryDto> recruitmentPosts;
 
     @Schema(description = "인기 도서 목록 (회원 맞춤형 또는 전체, 최대 10개)")
-    private Page<PopularBookDto> popularBooks;
+    private MainPagePopularBookDto popularBooks;
 }

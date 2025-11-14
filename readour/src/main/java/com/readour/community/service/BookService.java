@@ -207,7 +207,7 @@ public class BookService {
     // 사용자 정보(성별, 연령)를 기반으로 인기대출도서 API(#3)를 호출합니다.(Wrapper DTO 사용 O)
     // 비회원일 경우, 전체 인기 도서 반환
     @Transactional(readOnly = true)
-    public Page<PopularBookDto> getPopularBooks(UserPrincipal currentUser, Pageable pageable) {
+    public MainPagePopularBookDto getPopularBooks(UserPrincipal currentUser, Pageable pageable) {
         log.debug("Getting popular books...");
 
         // (API 호출을 위한 파라미터 준비)
@@ -218,11 +218,19 @@ public class BookService {
                 .queryParam("pageSize", pageable.getPageSize())
                 .queryParam("format", "json");
 
+        String criteria;
+
         if (currentUser != null) {
             User user = userRepository.findById(currentUser.getId())
                     .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + currentUser.getId()));
             String genderCode = mapGenderToApiCode(user.getGender());
             String ageCode = mapBirthDateToApiAgeCode(user.getBirthDate());
+
+            String ageDesc = mapBirthDateToDescription(user.getBirthDate());
+            String genderDesc = mapGenderToDescription(user.getGender());
+
+            criteria = (ageDesc.isBlank() ? "" : ageDesc) + (ageDesc.isBlank() || genderDesc.isBlank() ? "" : " ") + genderDesc;
+            if (criteria.isBlank()) criteria = "회원";
 
             log.debug("Fetching popular books for userId: {}. genderCode: {}, ageCode: {}", user.getId(), genderCode, ageCode);
             if (genderCode != null) {
@@ -233,6 +241,7 @@ public class BookService {
             }
         } else {
             log.debug("Get popular books for non-authenticated user.");
+            criteria = "전체";
         }
 
         URI uri = uriBuilder.build()
@@ -248,7 +257,10 @@ public class BookService {
 
             if (wrapper == null || wrapper.getResponse() == null || wrapper.getResponse().getDocs() == null) {
                 log.warn("Popular books API response is empty or malformed.");
-                return Page.empty(pageable);
+                return MainPagePopularBookDto.builder()
+                        .criteria(criteria)
+                        .popularBooks(Page.empty(pageable))
+                        .build();
             }
 
             LibraryApiDtos.PopularBookResponse response = wrapper.getResponse();
@@ -258,7 +270,12 @@ public class BookService {
                     .map(PopularBookDto::from)                   // PopularBookDoc -> PopularBookDto
                     .collect(Collectors.toList());
 
-            return new PageImpl<>(popularBooks, pageable, response.getNumFound());
+            Page<PopularBookDto> bookPage = new PageImpl<>(popularBooks, pageable, response.getNumFound());
+
+            return MainPagePopularBookDto.builder()
+                    .criteria(criteria)
+                    .popularBooks(bookPage)
+                    .build();
 
         } catch (Exception e) {
             log.error("Failed to fetch popular books from API. URI: " + uri, e);
@@ -393,6 +410,21 @@ public class BookService {
         }
     }
 
+    // 성별을 UI 문자열로 변환
+    private String mapGenderToDescription(Gender gender) {
+        if (gender == null) {
+            return "";
+        }
+        switch (gender) {
+            case MALE:
+                return "남성";
+            case FEMALE:
+                return "여성";
+            default:
+                return "";
+        }
+    }
+
     // 생년월일을 API 연령 코드(0, 6, 8, 14, 20, 30...)로 변환
     private String mapBirthDateToApiAgeCode(LocalDate birthDate) {
         if (birthDate == null) {
@@ -406,6 +438,21 @@ public class BookService {
         if (age <= 49) return "40"; // 40: 40대
         if (age <= 59) return "50"; // 50: 50대
         return "60"; // 60: 60세 이상
+    }
+
+    // 생년월일을 연령대 UI 문자열로 변환
+    private String mapBirthDateToDescription(LocalDate birthDate) {
+        if (birthDate == null) {
+            return "";
+        }
+        int age = Period.between(birthDate, LocalDate.now()).getYears();
+
+        if (age <= 19) return "10대";
+        if (age <= 29) return "20대";
+        if (age <= 39) return "30대";
+        if (age <= 49) return "40대";
+        if (age <= 59) return "50대";
+        return "60대 이상";
     }
 
     // 위시리스트 토글
