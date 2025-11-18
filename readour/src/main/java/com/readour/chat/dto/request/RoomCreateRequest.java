@@ -21,7 +21,7 @@ import java.util.List;
 public class RoomCreateRequest {
 
     @NotNull(message = "scope는 필수입니다.")
-    @Schema(description = "채팅방 범위", example = "ONE_TO_ONE")
+    @Schema(description = "채팅방 범위", example = "PUBLIC")
     private ChatRoomScope scope;
 
     @NotBlank(message = "name은 필수입니다.")

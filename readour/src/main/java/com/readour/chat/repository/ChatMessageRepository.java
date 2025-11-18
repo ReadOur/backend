@@ -21,4 +21,6 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     Slice<ChatMessage> findByRoomIdAndDeletedAtIsNull(Long roomId, Pageable pageable);
 
     Slice<ChatMessage> findByRoomIdAndDeletedAtIsNullAndCreatedAtLessThan(Long roomId, LocalDateTime before, Pageable pageable);
+
+    Slice<ChatMessage> findByRoomIdAndDeletedAtIsNullAndIdGreaterThan(Long roomId, Long lastMessageId, Pageable pageable);
 }

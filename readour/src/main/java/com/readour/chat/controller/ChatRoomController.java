@@ -7,22 +7,28 @@ import com.readour.chat.dto.response.RoomListPageResponse;
 import com.readour.chat.service.ChatRoomService;
 import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
+import com.readour.common.enums.ErrorCode;
+import com.readour.common.exception.CustomException;
+import com.readour.common.security.UserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 @RestController
 @Validated
 @RequiredArgsConstructor
 @RequestMapping("/chat/rooms")
+@SecurityRequirement(name = "bearerAuth")
 public class ChatRoomController {
 
     private final ChatRoomService chatRoomService;
@@ -35,13 +41,14 @@ public class ChatRoomController {
                     content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
     @GetMapping("/overview")
-    public ResponseEntity<ApiResponseDto<ChatPageOverviewResponse>> getOverview(@RequestParam Long userId,
+    public ResponseEntity<ApiResponseDto<ChatPageOverviewResponse>> getOverview(@AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                                 @RequestParam(required = false) String myQuery,
                                                                                 @RequestParam(required = false) Integer myPage,
                                                                                 @RequestParam(required = false) Integer mySize,
                                                                                 @RequestParam(required = false) String publicQuery,
                                                                                 @RequestParam(required = false) Integer publicPage,
                                                                                 @RequestParam(required = false) Integer publicSize) {
+        Long userId = requireUserId(userPrincipal);
         ChatPageOverviewResponse overview = chatRoomService.getChatPageOverview(
                 userId,
                 myQuery,
@@ -63,11 +70,11 @@ public class ChatRoomController {
 
     /**
      * 정상동작 확인 완료
-     * @param userId
-     * @param query
-     * @param page
-     * @param size
-     * @return
+     *
+     * @param query 검색어
+     * @param page 페이지 번호
+     * @param size 페이지 크기
+     * @return 내 채팅방 목록
      */
     @Operation(summary = "내 채팅방 목록 조회 / 구현 및 테스트 완료")
     @ApiResponses({
@@ -77,10 +84,11 @@ public class ChatRoomController {
                     content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
     @GetMapping("/my")
-    public ResponseEntity<ApiResponseDto<RoomListPageResponse>> getMyRooms(@RequestParam Long userId,
+    public ResponseEntity<ApiResponseDto<RoomListPageResponse>> getMyRooms(@AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                            @RequestParam(required = false) String query,
                                                                            @RequestParam(defaultValue = "0") int page,
                                                                            @RequestParam(defaultValue = "20") int size) {
+        Long userId = requireUserId(userPrincipal);
         RoomListPageResponse response = chatRoomService.getMyRooms(userId, query, page, size);
         ApiResponseDto<RoomListPageResponse> body = ApiResponseDto.<RoomListPageResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -92,9 +100,9 @@ public class ChatRoomController {
 
     /**
      * 정상 동작 확인 완료
-     * @param creatorId 채팅방 개설을 요청한 유저 id
+     *
      * @param request 채팅방 개설에 필요한 dto
-     * @return
+     * @return 생성 결과
      */
     @Operation(summary = "채팅방 개설 / 구현 및 테스트 완료")
     @ApiResponses({
@@ -105,9 +113,10 @@ public class ChatRoomController {
     })
     @PostMapping
     public ResponseEntity<ApiResponseDto<RoomCreateResponse>> createRoom(
-            @RequestHeader("X-User-Id") Long creatorId,
+            @AuthenticationPrincipal UserPrincipal userPrincipal,
             @Valid @RequestBody RoomCreateRequest request) {
 
+        Long creatorId = requireUserId(userPrincipal);
         RoomCreateResponse response = chatRoomService.createRoom(creatorId, request);
 
         ApiResponseDto<RoomCreateResponse> body = ApiResponseDto.<RoomCreateResponse>builder()
@@ -117,5 +126,12 @@ public class ChatRoomController {
                 .build();
 
         return ResponseEntity.status(HttpStatus.CREATED).body(body);
+    }
+
+    private Long requireUserId(UserPrincipal userPrincipal) {
+        if (userPrincipal == null) {
+            throw new CustomException(ErrorCode.UNAUTHORIZED, "인증 정보가 존재하지 않습니다.");
+        }
+        return userPrincipal.getId();
     }
 }

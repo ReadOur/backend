@@ -1,19 +1,24 @@
 package com.readour.chat.websocket;
 
 import com.readour.chat.repository.ChatRoomMemberRepository;
+import com.readour.common.enums.ErrorCode;
+import com.readour.common.exception.CustomException;
+import com.readour.common.security.JwtTokenProvider;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.server.HandshakeInterceptor;
 import org.springframework.web.util.UriTemplate;
 
-import jakarta.servlet.http.HttpServletRequest;
 import java.util.Map;
 
 @Component
@@ -24,6 +29,7 @@ public class ChatWebSocketHandshakeInterceptor implements HandshakeInterceptor {
     private static final UriTemplate URI_TEMPLATE = new UriTemplate("/ws/chat/{roomId}");
 
     private final ChatRoomMemberRepository chatRoomMemberRepository;
+    private final JwtTokenProvider jwtTokenProvider;
 
     @Override
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
@@ -48,17 +54,20 @@ public class ChatWebSocketHandshakeInterceptor implements HandshakeInterceptor {
         }
 
         String roomIdValue = vars.get("roomId");
-        String userIdHeader = httpServletRequest.getHeader("X-User-Id");
-        if (roomIdValue == null || userIdHeader == null) {
+        Long userId;
+        try {
+            userId = extractUserId(httpServletRequest);
+        } catch (CustomException ex) {
+            response.setStatusCode(mapToStatus(ex.getErrorCode()));
+            return false;
+        }
+        if (roomIdValue == null) {
             response.setStatusCode(HttpStatus.BAD_REQUEST);
             return false;
         }
-
         Long roomId;
-        Long userId;
         try {
             roomId = Long.valueOf(roomIdValue);
-            userId = Long.valueOf(userIdHeader);
         } catch (NumberFormatException e) {
             response.setStatusCode(HttpStatus.BAD_REQUEST);
             return false;
@@ -81,5 +90,24 @@ public class ChatWebSocketHandshakeInterceptor implements HandshakeInterceptor {
         if (exception != null) {
             log.debug("WebSocket handshake failed: {}", exception.getMessage());
         }
+    }
+
+    private Long extractUserId(HttpServletRequest request) {
+        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (!StringUtils.hasText(authorization) || !authorization.startsWith("Bearer ")) {
+            throw new CustomException(ErrorCode.UNAUTHORIZED, "JWT 토큰이 필요합니다.");
+        }
+        String token = authorization.substring(7);
+        if (!StringUtils.hasText(token)) {
+            throw new CustomException(ErrorCode.INVALID_TOKEN, "유효하지 않은 토큰입니다.");
+        }
+        return jwtTokenProvider.getUserId(token);
+    }
+
+    private HttpStatus mapToStatus(ErrorCode errorCode) {
+        return switch (errorCode) {
+            case TOKEN_EXPIRED, INVALID_TOKEN, UNAUTHORIZED -> HttpStatus.UNAUTHORIZED;
+            default -> HttpStatus.BAD_REQUEST;
+        };
     }
 }

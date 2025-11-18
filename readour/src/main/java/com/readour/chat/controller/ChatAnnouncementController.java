@@ -7,11 +7,15 @@ import com.readour.chat.dto.response.ChatAnnouncementResponse;
 import com.readour.chat.service.ChatAnnouncementService;
 import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
+import com.readour.common.enums.ErrorCode;
+import com.readour.common.exception.CustomException;
+import com.readour.common.security.UserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,14 +26,15 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/chat/rooms/{roomId}/announcements")
+@SecurityRequirement(name = "bearerAuth")
 public class ChatAnnouncementController {
 
     private final ChatAnnouncementService chatAnnouncementService;
@@ -45,8 +50,9 @@ public class ChatAnnouncementController {
     })
     @PostMapping
     public ResponseEntity<ApiResponseDto<ChatAnnouncementResponse>> createAnnouncement(@PathVariable Long roomId,
-                                                                                       @RequestHeader("X-User-Id") Long userId,
+                                                                                       @AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                                        @Validated @RequestBody ChatAnnouncementCreateRequest request) {
+        Long userId = requireUserId(userPrincipal);
         ChatAnnouncementResponse response = chatAnnouncementService.createAnnouncement(roomId, userId, request);
         ApiResponseDto<ChatAnnouncementResponse> body = ApiResponseDto.<ChatAnnouncementResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -65,9 +71,10 @@ public class ChatAnnouncementController {
     })
     @GetMapping
     public ResponseEntity<ApiResponseDto<ChatAnnouncementListResponse>> getAnnouncements(@PathVariable Long roomId,
-                                                                                         @RequestHeader("X-User-Id") Long userId,
+                                                                                         @AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                                          @RequestParam(required = false) Integer page,
                                                                                          @RequestParam(required = false) Integer size) {
+        Long userId = requireUserId(userPrincipal);
         ChatAnnouncementListResponse response = chatAnnouncementService.getAnnouncements(roomId, userId, page, size);
         ApiResponseDto<ChatAnnouncementListResponse> body = ApiResponseDto.<ChatAnnouncementListResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -89,7 +96,8 @@ public class ChatAnnouncementController {
     @GetMapping("/{announcementId}")
     public ResponseEntity<ApiResponseDto<ChatAnnouncementResponse>> getAnnouncement(@PathVariable Long roomId,
                                                                                     @PathVariable Long announcementId,
-                                                                                    @RequestHeader("X-User-Id") Long userId) {
+                                                                                    @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        Long userId = requireUserId(userPrincipal);
         ChatAnnouncementResponse response = chatAnnouncementService.getAnnouncement(roomId, userId, announcementId);
         ApiResponseDto<ChatAnnouncementResponse> body = ApiResponseDto.<ChatAnnouncementResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -113,8 +121,9 @@ public class ChatAnnouncementController {
     @PutMapping("/{announcementId}")
     public ResponseEntity<ApiResponseDto<ChatAnnouncementResponse>> updateAnnouncement(@PathVariable Long roomId,
                                                                                        @PathVariable Long announcementId,
-                                                                                       @RequestHeader("X-User-Id") Long userId,
+                                                                                       @AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                                        @Validated @RequestBody ChatAnnouncementUpdateRequest request) {
+        Long userId = requireUserId(userPrincipal);
         ChatAnnouncementResponse response = chatAnnouncementService.updateAnnouncement(roomId, userId, announcementId, request);
         ApiResponseDto<ChatAnnouncementResponse> body = ApiResponseDto.<ChatAnnouncementResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -136,7 +145,8 @@ public class ChatAnnouncementController {
     @DeleteMapping("/{announcementId}")
     public ResponseEntity<ApiResponseDto<Void>> deleteAnnouncement(@PathVariable Long roomId,
                                                                    @PathVariable Long announcementId,
-                                                                   @RequestHeader("X-User-Id") Long userId) {
+                                                                   @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        Long userId = requireUserId(userPrincipal);
         chatAnnouncementService.deleteAnnouncement(roomId, userId, announcementId);
         ApiResponseDto<Void> body = ApiResponseDto.<Void>builder()
                 .status(HttpStatus.OK.value())
@@ -144,5 +154,12 @@ public class ChatAnnouncementController {
                 .message("공지를 삭제했습니다.")
                 .build();
         return ResponseEntity.ok(body);
+    }
+
+    private Long requireUserId(UserPrincipal userPrincipal) {
+        if (userPrincipal == null) {
+            throw new CustomException(ErrorCode.UNAUTHORIZED, "인증 정보가 존재하지 않습니다.");
+        }
+        return userPrincipal.getId();
     }
 }
