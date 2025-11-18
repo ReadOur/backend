@@ -15,25 +15,27 @@ import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.exception.CustomException;
+import com.readour.common.security.UserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -42,6 +44,7 @@ import java.util.Map;
 @Validated
 @RequestMapping("/chat/rooms")
 @RequiredArgsConstructor
+@SecurityRequirement(name = "bearerAuth")
 public class ChatRoomMemberController {
 
     private final ChatRoomMemberService chatRoomMemberService;
@@ -61,9 +64,11 @@ public class ChatRoomMemberController {
     })
     @PostMapping("/{roomId}/leave")
     public ResponseEntity<ApiResponseDto<RoomListPageResponse>> leave(@PathVariable Long roomId,
+                                                                      @AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                       @Validated @RequestBody LeaveRoomRequest request) {
-        chatRoomMemberService.leaveRoom(roomId, request.getUserId());
-        RoomListPageResponse rooms = fetchMyRooms(request.getUserId(), request.getQuery(), request.getPage(), request.getSize());
+        Long userId = requireUserId(userPrincipal);
+        chatRoomMemberService.leaveRoom(roomId, userId);
+        RoomListPageResponse rooms = fetchMyRooms(userId, request.getQuery(), request.getPage(), request.getSize());
 
         ApiResponseDto<RoomListPageResponse> body = ApiResponseDto.<RoomListPageResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -84,9 +89,11 @@ public class ChatRoomMemberController {
     })
     @PostMapping("/{roomId}/destroy")
     public ResponseEntity<ApiResponseDto<RoomListPageResponse>> destroy(@PathVariable Long roomId,
+                                                                        @AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                         @Validated @RequestBody DestroyRoomRequest request) {
-        chatRoomMemberService.destroyRoom(roomId, request.getOwnerId(), request.getConfirmDestroy());
-        RoomListPageResponse rooms = fetchMyRooms(request.getOwnerId(), request.getQuery(), request.getPage(), request.getSize());
+        Long userId = requireUserId(userPrincipal);
+        chatRoomMemberService.destroyRoom(roomId, userId, request.getConfirmDestroy());
+        RoomListPageResponse rooms = fetchMyRooms(userId, request.getQuery(), request.getPage(), request.getSize());
 
         ApiResponseDto<RoomListPageResponse> body = ApiResponseDto.<RoomListPageResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -105,9 +112,11 @@ public class ChatRoomMemberController {
     })
     @PostMapping("/{roomId}/join")
     public ResponseEntity<ApiResponseDto<RoomListPageResponse>> join(@PathVariable Long roomId,
+                                                                     @AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                      @Valid @RequestBody JoinRoomRequest request) {
-        chatRoomMemberService.joinRoom(roomId, request.getUserId());
-        RoomListPageResponse rooms = fetchMyRooms(request.getUserId(), request.getQuery(), request.getPage(), request.getSize());
+        Long userId = requireUserId(userPrincipal);
+        chatRoomMemberService.joinRoom(roomId, userId);
+        RoomListPageResponse rooms = fetchMyRooms(userId, request.getQuery(), request.getPage(), request.getSize());
 
         ApiResponseDto<RoomListPageResponse> body = ApiResponseDto.<RoomListPageResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -125,9 +134,11 @@ public class ChatRoomMemberController {
                     content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
     @PostMapping("/leave/bulk")
-    public ResponseEntity<ApiResponseDto<RoomListPageResponse>> leaveBulk(@Valid @RequestBody BulkLeaveRoomsRequest request) {
-        chatRoomMemberService.leaveRooms(request.getUserId(), request.getRoomIds());
-        RoomListPageResponse rooms = fetchMyRooms(request.getUserId(), request.getQuery(), request.getPage(), request.getSize());
+    public ResponseEntity<ApiResponseDto<RoomListPageResponse>> leaveBulk(@AuthenticationPrincipal UserPrincipal userPrincipal,
+                                                                          @Valid @RequestBody BulkLeaveRoomsRequest request) {
+        Long userId = requireUserId(userPrincipal);
+        chatRoomMemberService.leaveRooms(userId, request.getRoomIds());
+        RoomListPageResponse rooms = fetchMyRooms(userId, request.getQuery(), request.getPage(), request.getSize());
 
         ApiResponseDto<RoomListPageResponse> body = ApiResponseDto.<RoomListPageResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -146,9 +157,11 @@ public class ChatRoomMemberController {
     })
     @PostMapping("/{roomId}/pin")
     public ResponseEntity<ApiResponseDto<RoomListPageResponse>> pin(@PathVariable Long roomId,
+                                                                    @AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                     @Valid @RequestBody PinRoomRequest request) {
-        chatRoomMemberService.pinRoom(roomId, request.getUserId());
-        RoomListPageResponse rooms = fetchMyRooms(request.getUserId(), request.getQuery(), request.getPage(), request.getSize());
+        Long userId = requireUserId(userPrincipal);
+        chatRoomMemberService.pinRoom(roomId, userId);
+        RoomListPageResponse rooms = fetchMyRooms(userId, request.getQuery(), request.getPage(), request.getSize());
 
         ApiResponseDto<RoomListPageResponse> body = ApiResponseDto.<RoomListPageResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -169,9 +182,11 @@ public class ChatRoomMemberController {
     })
     @PostMapping("/{roomId}/kick")
     public ResponseEntity<ApiResponseDto<RoomListPageResponse>> kick(@PathVariable Long roomId,
+                                                                     @AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                      @Valid @RequestBody KickMemberRequest request) {
-        chatRoomMemberService.kickMember(roomId, request.getUserId(), request.getTargetUserId(), request.getReason());
-        RoomListPageResponse rooms = fetchMyRooms(request.getUserId(), request.getQuery(), request.getPage(), request.getSize());
+        Long userId = requireUserId(userPrincipal);
+        chatRoomMemberService.kickMember(roomId, userId, request.getTargetUserId(), request.getReason());
+        RoomListPageResponse rooms = fetchMyRooms(userId, request.getQuery(), request.getPage(), request.getSize());
 
         ApiResponseDto<RoomListPageResponse> body = ApiResponseDto.<RoomListPageResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -193,7 +208,8 @@ public class ChatRoomMemberController {
     @GetMapping("/{roomId}/members/{targetUserId}")
     public ResponseEntity<ApiResponseDto<RoomMemberProfileResponse>> getMemberProfile(@PathVariable Long roomId,
                                                                                       @PathVariable Long targetUserId,
-                                                                                      @RequestParam("requesterId") Long requesterId) {
+                                                                                      @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        Long requesterId = requireUserId(userPrincipal);
         RoomMemberProfileResponse profile = chatRoomMemberService.getMemberProfile(roomId, requesterId, targetUserId);
 
         ApiResponseDto<RoomMemberProfileResponse> body = ApiResponseDto.<RoomMemberProfileResponse>builder()
@@ -213,9 +229,11 @@ public class ChatRoomMemberController {
     })
     @DeleteMapping("/{roomId}/pin")
     public ResponseEntity<ApiResponseDto<RoomListPageResponse>> unpin(@PathVariable Long roomId,
+                                                                      @AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                       @Valid @RequestBody PinRoomRequest request) {
-        chatRoomMemberService.unpinRoom(roomId, request.getUserId());
-        RoomListPageResponse rooms = fetchMyRooms(request.getUserId(), request.getQuery(), request.getPage(), request.getSize());
+        Long userId = requireUserId(userPrincipal);
+        chatRoomMemberService.unpinRoom(roomId, userId);
+        RoomListPageResponse rooms = fetchMyRooms(userId, request.getQuery(), request.getPage(), request.getSize());
 
         ApiResponseDto<RoomListPageResponse> body = ApiResponseDto.<RoomListPageResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -233,10 +251,12 @@ public class ChatRoomMemberController {
                     content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
     @PatchMapping("/pins/reorder")
-    public ResponseEntity<ApiResponseDto<RoomListPageResponse>> reorderPins(@Valid @RequestBody PinReorderRequest request) {
+    public ResponseEntity<ApiResponseDto<RoomListPageResponse>> reorderPins(@AuthenticationPrincipal UserPrincipal userPrincipal,
+                                                                            @Valid @RequestBody PinReorderRequest request) {
         Map<Long, Integer> desiredOrders = toOrderMap(request);
-        chatRoomMemberService.reorderPins(request.getUserId(), desiredOrders);
-        RoomListPageResponse rooms = fetchMyRooms(request.getUserId(), request.getQuery(), request.getPage(), request.getSize());
+        Long userId = requireUserId(userPrincipal);
+        chatRoomMemberService.reorderPins(userId, desiredOrders);
+        RoomListPageResponse rooms = fetchMyRooms(userId, request.getQuery(), request.getPage(), request.getSize());
 
         ApiResponseDto<RoomListPageResponse> body = ApiResponseDto.<RoomListPageResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -259,11 +279,15 @@ public class ChatRoomMemberController {
     }
 
     private RoomListPageResponse fetchMyRooms(Long userId, String query, Integer page, Integer size) {
-        if (userId == null) {
-            throw new CustomException(ErrorCode.BAD_REQUEST, "userId는 필수입니다.");
-        }
         int resolvedPage = page == null ? DEFAULT_PAGE : page;
         int resolvedSize = size == null ? DEFAULT_SIZE : size;
         return chatRoomService.getMyRooms(userId, query, resolvedPage, resolvedSize);
+    }
+
+    private Long requireUserId(UserPrincipal userPrincipal) {
+        if (userPrincipal == null) {
+            throw new CustomException(ErrorCode.UNAUTHORIZED, "인증 정보가 존재하지 않습니다.");
+        }
+        return userPrincipal.getId();
     }
 }

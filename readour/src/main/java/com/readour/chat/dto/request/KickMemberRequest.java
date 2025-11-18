@@ -14,10 +14,6 @@ import lombok.NoArgsConstructor;
 @Schema(description = "채팅방 강퇴 요청 DTO")
 public class KickMemberRequest {
 
-    @NotNull(message = "userId는 필수입니다.")
-    @Schema(description = "강퇴를 수행하는 사용자 ID", example = "2025001")
-    private Long userId;
-
     @NotNull(message = "targetUserId는 필수입니다.")
     @Schema(description = "강퇴 대상 사용자 ID", example = "2025002")
     private Long targetUserId;

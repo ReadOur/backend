@@ -7,11 +7,15 @@ import com.readour.chat.dto.response.ChatPollResultResponse;
 import com.readour.chat.service.ChatPollService;
 import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
+import com.readour.common.enums.ErrorCode;
+import com.readour.common.exception.CustomException;
+import com.readour.common.security.UserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -20,13 +24,14 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/chat/rooms/{roomId}/polls")
+@SecurityRequirement(name = "bearerAuth")
 public class ChatPollController {
 
     private final ChatPollService chatPollService;
@@ -42,8 +47,9 @@ public class ChatPollController {
     })
     @PostMapping
     public ResponseEntity<ApiResponseDto<ChatPollResponse>> createPoll(@PathVariable Long roomId,
-                                                                       @RequestHeader("X-User-Id") Long userId,
+                                                                       @AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                        @Validated @RequestBody ChatPollCreateRequest request) {
+        Long userId = requireUserId(userPrincipal);
         ChatPollResponse response = chatPollService.createPoll(roomId, userId, request);
         ApiResponseDto<ChatPollResponse> body = ApiResponseDto.<ChatPollResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -67,8 +73,9 @@ public class ChatPollController {
     @PostMapping("/{pollId}/votes")
     public ResponseEntity<ApiResponseDto<ChatPollResultResponse>> vote(@PathVariable Long roomId,
                                                                        @PathVariable Long pollId,
-                                                                       @RequestHeader("X-User-Id") Long userId,
+                                                                       @AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                        @Validated @RequestBody ChatPollVoteRequest request) {
+        Long userId = requireUserId(userPrincipal);
         ChatPollResultResponse response = chatPollService.vote(roomId, pollId, userId, request);
         ApiResponseDto<ChatPollResultResponse> body = ApiResponseDto.<ChatPollResultResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -90,7 +97,8 @@ public class ChatPollController {
     @GetMapping("/{pollId}/results")
     public ResponseEntity<ApiResponseDto<ChatPollResultResponse>> getResult(@PathVariable Long roomId,
                                                                             @PathVariable Long pollId,
-                                                                            @RequestHeader("X-User-Id") Long userId) {
+                                                                            @AuthenticationPrincipal UserPrincipal userPrincipal) {
+        Long userId = requireUserId(userPrincipal);
         ChatPollResultResponse response = chatPollService.getResult(roomId, pollId, userId);
         ApiResponseDto<ChatPollResultResponse> body = ApiResponseDto.<ChatPollResultResponse>builder()
                 .status(HttpStatus.OK.value())
@@ -98,5 +106,12 @@ public class ChatPollController {
                 .message("투표 결과를 조회했습니다.")
                 .build();
         return ResponseEntity.ok(body);
+    }
+
+    private Long requireUserId(UserPrincipal userPrincipal) {
+        if (userPrincipal == null) {
+            throw new CustomException(ErrorCode.UNAUTHORIZED, "인증 정보가 존재하지 않습니다.");
+        }
+        return userPrincipal.getId();
     }
 }

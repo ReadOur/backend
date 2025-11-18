@@ -3,7 +3,6 @@ package com.readour.chat.dto.request;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -15,10 +14,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Schema(description = "채팅방 핀 설정/해제 요청 DTO")
 public class PinRoomRequest {
-
-    @NotNull(message = "userId는 필수입니다.")
-    @Schema(description = "핀을 설정하거나 해제할 사용자 ID", example = "2025001")
-    private Long userId;
 
     @Schema(description = "검색어 필터", example = "프로젝트", nullable = true)
     private String query;

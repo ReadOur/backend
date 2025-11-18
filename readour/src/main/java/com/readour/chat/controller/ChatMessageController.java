@@ -5,11 +5,15 @@ import com.readour.chat.dto.response.MessageListResponse;
 import com.readour.chat.service.ChatMessageService;
 import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
+import com.readour.common.enums.ErrorCode;
+import com.readour.common.exception.CustomException;
+import com.readour.common.security.UserPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -18,12 +22,14 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 import java.time.LocalDateTime;
 
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/chat/rooms")
+@SecurityRequirement(name = "bearerAuth")
 public class ChatMessageController {
 
     private final ChatMessageService chatMessageService;
@@ -39,11 +45,12 @@ public class ChatMessageController {
     })
     @GetMapping("/{roomId}/messages")
     public ResponseEntity<ApiResponseDto<MessageListResponse>> getTimeline(@PathVariable Long roomId,
-                                                                           @RequestHeader("X-User-Id") Long userId,
+                                                                           @AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                            @RequestParam(required = false)
                                                                            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
                                                                            LocalDateTime before,
                                                                            @RequestParam(required = false) Integer limit) {
+        Long userId = requireUserId(userPrincipal);
         MessageListResponse timeline = chatMessageService.getTimeline(roomId, userId, before, limit);
 
         ApiResponseDto<MessageListResponse> response = ApiResponseDto.<MessageListResponse>builder()
@@ -99,8 +106,9 @@ public class ChatMessageController {
     })
     @PostMapping(value = "/{roomId}/messages/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<ApiResponseDto<MessageDto>> sendFile(@PathVariable Long roomId,
-                                                               @RequestHeader("X-User-Id") Long userId,
+                                                               @AuthenticationPrincipal UserPrincipal userPrincipal,
                                                                @RequestParam("file") MultipartFile file) {
+        Long userId = requireUserId(userPrincipal);
         MessageDto saved = chatMessageService.sendFile(roomId, userId, file);
 
         ApiResponseDto<MessageDto> response = ApiResponseDto.<MessageDto>builder()
@@ -112,5 +120,10 @@ public class ChatMessageController {
         return ResponseEntity.ok(response);
     }
 
-
+    private Long requireUserId(UserPrincipal userPrincipal) {
+        if (userPrincipal == null) {
+            throw new CustomException(ErrorCode.UNAUTHORIZED, "인증 정보가 존재하지 않습니다.");
+        }
+        return userPrincipal.getId();
+    }
 }

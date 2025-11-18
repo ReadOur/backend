@@ -20,10 +20,6 @@ import java.util.List;
 @Schema(description = "채팅방 핀 순서 변경 요청 DTO")
 public class PinReorderRequest {
 
-    @NotNull(message = "userId는 필수입니다.")
-    @Schema(description = "핀 순서를 변경할 사용자 ID", example = "2025001")
-    private Long userId;
-
     @Valid
     @NotEmpty(message = "orders는 비어 있을 수 없습니다.")
     @Schema(description = "변경할 핀 순서 목록")
