@@ -28,6 +28,11 @@ public class JwtAuthenticationEntryPoint implements AuthenticationEntryPoint {
                          HttpServletResponse response,
                          AuthenticationException authException) throws IOException {
 
+        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+        response.setCharacterEncoding("UTF-8");
+
+        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+
         CustomException customException = (CustomException) request.getAttribute(JWT_EXCEPTION_ATTR);
         ErrorCode errorCode = customException != null ? customException.getErrorCode() : ErrorCode.UNAUTHORIZED;
         String message = customException != null ? customException.getMessage() : errorCode.getDefaultMessage();

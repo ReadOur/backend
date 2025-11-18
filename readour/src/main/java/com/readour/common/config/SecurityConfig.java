@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -52,6 +53,10 @@ public class SecurityConfig {
                         "/swagger-resources/**",
                         "/actuator/**"
                 ).permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/regions/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/community/posts/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/books/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/main-page").permitAll()
                 .anyRequest().authenticated()
         ).exceptionHandling(ex -> ex.authenticationEntryPoint(jwtAuthenticationEntryPoint));
 
