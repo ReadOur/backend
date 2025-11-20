@@ -8,9 +8,12 @@ import com.readour.chat.dto.request.LeaveRoomRequest;
 import com.readour.chat.dto.request.PinReorderRequest;
 import com.readour.chat.dto.request.PinRoomRequest;
 import com.readour.chat.dto.response.RoomListPageResponse;
+import com.readour.chat.dto.response.MessageListResponse;
+import com.readour.chat.dto.response.JoinRoomResponse;
 import com.readour.chat.dto.response.RoomMemberProfileResponse;
 import com.readour.chat.service.ChatRoomMemberService;
 import com.readour.chat.service.ChatRoomService;
+import com.readour.chat.service.ChatMessageService;
 import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
 import com.readour.common.enums.ErrorCode;
@@ -49,6 +52,7 @@ public class ChatRoomMemberController {
 
     private final ChatRoomMemberService chatRoomMemberService;
     private final ChatRoomService chatRoomService;
+    private final ChatMessageService chatMessageService;
 
     private static final int DEFAULT_PAGE = 0;
     private static final int DEFAULT_SIZE = 20;
@@ -111,16 +115,21 @@ public class ChatRoomMemberController {
                     content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
     })
     @PostMapping("/{roomId}/join")
-    public ResponseEntity<ApiResponseDto<RoomListPageResponse>> join(@PathVariable Long roomId,
-                                                                     @AuthenticationPrincipal UserPrincipal userPrincipal,
-                                                                     @Valid @RequestBody JoinRoomRequest request) {
+    public ResponseEntity<ApiResponseDto<JoinRoomResponse>> join(@PathVariable Long roomId,
+                                                                 @AuthenticationPrincipal UserPrincipal userPrincipal,
+                                                                 @Valid @RequestBody JoinRoomRequest request) {
         Long userId = requireUserId(userPrincipal);
         chatRoomMemberService.joinRoom(roomId, userId);
         RoomListPageResponse rooms = fetchMyRooms(userId, request.getQuery(), request.getPage(), request.getSize());
+        MessageListResponse timeline = chatMessageService.getTimeline(roomId, userId, null, null);
+        JoinRoomResponse payload = JoinRoomResponse.builder()
+                .rooms(rooms)
+                .timeline(timeline)
+                .build();
 
-        ApiResponseDto<RoomListPageResponse> body = ApiResponseDto.<RoomListPageResponse>builder()
+        ApiResponseDto<JoinRoomResponse> body = ApiResponseDto.<JoinRoomResponse>builder()
                 .status(HttpStatus.OK.value())
-                .body(rooms)
+                .body(payload)
                 .message("채팅방에 참여했습니다.")
                 .build();
         return ResponseEntity.ok(body);

@@ -6,6 +6,7 @@ import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> {
@@ -23,4 +24,10 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
     Slice<ChatMessage> findByRoomIdAndDeletedAtIsNullAndCreatedAtLessThan(Long roomId, LocalDateTime before, Pageable pageable);
 
     Slice<ChatMessage> findByRoomIdAndDeletedAtIsNullAndIdGreaterThan(Long roomId, Long lastMessageId, Pageable pageable);
+
+    List<ChatMessage> findTop100ByRoomIdAndDeletedAtIsNullOrderByCreatedAtDesc(Long roomId);
+
+    List<ChatMessage> findTop50ByRoomIdAndDeletedAtIsNullAndIdLessThanEqualOrderByCreatedAtDesc(Long roomId, Long messageId);
+
+    List<ChatMessage> findByRoomIdAndDeletedAtIsNullAndIdGreaterThanOrderByCreatedAtAsc(Long roomId, Long messageId);
 }
