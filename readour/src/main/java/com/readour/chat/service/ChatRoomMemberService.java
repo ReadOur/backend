@@ -2,7 +2,6 @@ package com.readour.chat.service;
 
 import com.readour.chat.entity.ChatRoom;
 import com.readour.chat.entity.ChatRoomMember;
-import com.readour.chat.repository.ChatMessageRepository;
 import com.readour.chat.repository.ChatRoomMemberRepository;
 import com.readour.chat.repository.ChatRoomRepository;
 import com.readour.chat.dto.response.RoomMemberProfileResponse;
@@ -30,7 +29,6 @@ public class ChatRoomMemberService {
 
     private final ChatRoomMemberRepository chatRoomMemberRepository;
     private final ChatRoomRepository chatRoomRepository;
-    private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
 
     /**
@@ -152,7 +150,6 @@ public class ChatRoomMemberService {
         }
 
         LocalDateTime now = LocalDateTime.now();
-        Long latestMsgId = resolveLatestMessageId(roomId);
 
         ChatRoomMember member = chatRoomMemberRepository.findByRoomIdAndUserId(roomId, userId).orElse(null);
         if (member == null) {
@@ -162,7 +159,7 @@ public class ChatRoomMemberService {
                     .role(Role.MEMBER)
                     .joinedAt(now)
                     .mutedUntil(null)
-                    .lastReadMsgId(latestMsgId)
+                    .lastReadMsgId(null)
                     .isActive(true)
                     .pinnedAt(null)
                     .pinOrder(null)
@@ -183,7 +180,6 @@ public class ChatRoomMemberService {
             member.setKickedAt(null);
             member.setKickedBy(null);
             member.setKickReason(null);
-            member.setLastReadMsgId(latestMsgId);
         }
 
         room.setUpdatedAt(now);
@@ -277,11 +273,5 @@ public class ChatRoomMemberService {
             return false;
         }
         return member.getRole() == Role.MANAGER || member.getRole() == Role.OWNER;
-    }
-
-    private Long resolveLatestMessageId(Long roomId) {
-        return chatMessageRepository.findFirstByRoomIdOrderByIdDesc(roomId)
-                .map(message -> message.getId())
-                .orElse(null);
     }
 }

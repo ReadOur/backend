@@ -7,6 +7,7 @@ import com.readour.chat.dto.response.MessageListResponse;
 import com.readour.chat.entity.ChatMessage;
 import com.readour.chat.entity.ChatMessageHide;
 import com.readour.chat.entity.ChatReadReceipt;
+import com.readour.chat.entity.ChatRoomMember;
 import com.readour.chat.repository.ChatMessageHideRepository;
 import com.readour.chat.repository.ChatMessageRepository;
 import com.readour.chat.repository.ChatRoomMemberRepository;
@@ -184,9 +185,18 @@ public class ChatMessageService {
             throw new CustomException(ErrorCode.BAD_REQUEST, "userId는 필수입니다.");
         }
 
-        chatRoomMemberRepository.findByRoomIdAndUserIdAndIsActiveTrue(roomId, userId)
+        ChatRoomMember member = chatRoomMemberRepository.findByRoomIdAndUserIdAndIsActiveTrue(roomId, userId)
                 .orElseThrow(() -> new CustomException(ErrorCode.FORBIDDEN, "채팅방에 참여 중이 아닙니다."));
 
+        boolean requiresCustomWindow = before == null && limit == null;
+        if (requiresCustomWindow) {
+            return loadInitialWindow(roomId, userId, member);
+        }
+
+        return loadPagedWindow(roomId, userId, before, limit);
+    }
+
+    private MessageListResponse loadPagedWindow(Long roomId, Long userId, LocalDateTime before, Integer limit) {
         int resolvedLimit = limit == null ? DEFAULT_LIMIT : limit;
         if (resolvedLimit <= 0) {
             throw new CustomException(ErrorCode.BAD_REQUEST, "limit는 1 이상이어야 합니다.");
@@ -203,18 +213,9 @@ public class ChatMessageService {
                 : chatMessageRepository.findByRoomIdAndDeletedAtIsNull(roomId, pageable);
 
         List<ChatMessage> entities = slice.getContent();
-        List<Long> messageIds = entities.stream()
-                .map(ChatMessage::getId)
-                .collect(Collectors.toList());
+        List<ChatMessage> visibleMessages = filterHiddenMessages(userId, entities);
 
-        Set<Long> hiddenMessageIds = messageIds.isEmpty() ? Set.of() : chatMessageHideRepository
-                .findAllByUserIdAndMsgIdInAndUnhiddenAtIsNull(userId, messageIds)
-                .stream()
-                .map(ChatMessageHide::getMsgId)
-                .collect(Collectors.toCollection(HashSet::new));
-
-        List<MessageDto> items = entities.stream()
-                .filter(entity -> !hiddenMessageIds.contains(entity.getId()))
+        List<MessageDto> items = visibleMessages.stream()
                 .map(MessageDto::fromEntity)
                 .collect(Collectors.toCollection(ArrayList::new));
 
@@ -229,6 +230,52 @@ public class ChatMessageService {
         LocalDateTime nextBefore = (slice.hasNext() && !entities.isEmpty())
                 ? entities.get(entities.size() - 1).getCreatedAt()
                 : null;
+
+        MessageListResponse.Paging paging = MessageListResponse.Paging.builder()
+                .nextBefore(nextBefore)
+                .build();
+
+        return MessageListResponse.builder()
+                .items(items)
+                .paging(paging)
+                .build();
+    }
+
+    private MessageListResponse loadInitialWindow(Long roomId, Long userId, ChatRoomMember member) {
+        List<ChatMessage> candidates = new ArrayList<>();
+        Long lastReadId = member.getLastReadMsgId();
+
+        if (lastReadId == null) {
+            List<ChatMessage> recent = chatMessageRepository
+                    .findTop100ByRoomIdAndDeletedAtIsNullOrderByCreatedAtDesc(roomId);
+            Collections.reverse(recent);
+            candidates.addAll(recent);
+        } else {
+            List<ChatMessage> previous = chatMessageRepository
+                    .findTop50ByRoomIdAndDeletedAtIsNullAndIdLessThanEqualOrderByCreatedAtDesc(roomId, lastReadId);
+            Collections.reverse(previous);
+            candidates.addAll(previous);
+
+            List<ChatMessage> unread = chatMessageRepository
+                    .findByRoomIdAndDeletedAtIsNullAndIdGreaterThanOrderByCreatedAtAsc(roomId, lastReadId);
+            candidates.addAll(unread);
+        }
+
+        List<ChatMessage> visibleMessages = filterHiddenMessages(userId, candidates);
+        List<MessageDto> items = visibleMessages.stream()
+                .map(MessageDto::fromEntity)
+                .collect(Collectors.toCollection(ArrayList::new));
+
+        populateSenderNicknames(items);
+
+        if (!items.isEmpty()) {
+            Long latestMsgId = items.get(items.size() - 1).getId();
+            recordLatestRead(roomId, userId, latestMsgId);
+        }
+
+        LocalDateTime nextBefore = visibleMessages.isEmpty()
+                ? null
+                : visibleMessages.get(0).getCreatedAt();
 
         MessageListResponse.Paging paging = MessageListResponse.Paging.builder()
                 .nextBefore(nextBefore)
@@ -294,6 +341,30 @@ public class ChatMessageService {
                 .map(User::getNickname)
                 .filter(nickname -> !nickname.isBlank())
                 .orElse(UNKNOWN_SENDER_NICKNAME);
+    }
+
+    private List<ChatMessage> filterHiddenMessages(Long userId, List<ChatMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> ids = messages.stream()
+                .map(ChatMessage::getId)
+                .collect(Collectors.toList());
+
+        Set<Long> hiddenMessageIds = chatMessageHideRepository
+                .findAllByUserIdAndMsgIdInAndUnhiddenAtIsNull(userId, ids)
+                .stream()
+                .map(ChatMessageHide::getMsgId)
+                .collect(Collectors.toCollection(HashSet::new));
+
+        if (hiddenMessageIds.isEmpty()) {
+            return new ArrayList<>(messages);
+        }
+
+        return messages.stream()
+                .filter(message -> !hiddenMessageIds.contains(message.getId()))
+                .collect(Collectors.toCollection(ArrayList::new));
     }
 
     private void recordLatestRead(Long roomId, Long userId, Long messageId) {
