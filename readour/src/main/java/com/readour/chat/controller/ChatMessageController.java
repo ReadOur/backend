@@ -2,6 +2,7 @@ package com.readour.chat.controller;
 
 import com.readour.chat.dto.common.MessageDto;
 import com.readour.chat.dto.response.MessageListResponse;
+import com.readour.chat.dto.request.MessageSendRequest;
 import com.readour.chat.service.ChatMessageService;
 import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.ErrorResponseDto;
@@ -80,9 +81,16 @@ public class ChatMessageController {
     })
     @PostMapping("/{roomId}/messages")
     public ResponseEntity<ApiResponseDto<MessageDto>> send(@PathVariable Long roomId,
-                                                           @Validated @RequestBody MessageDto dto) {
-        dto.setRoomId(roomId);
-        MessageDto saved = chatMessageService.send(dto);
+                                                           @AuthenticationPrincipal UserPrincipal userPrincipal,
+                                                           @Validated @RequestBody MessageSendRequest request) {
+        Long userId = requireUserId(userPrincipal);
+        MessageDto saved = chatMessageService.send(MessageDto.builder()
+                .roomId(roomId)
+                .senderId(userId)
+                .type(request.getType())
+                .body(request.getBody())
+                .replyToMsgId(request.getReplyToMsgId())
+                .build());
 
         ApiResponseDto<MessageDto> response = ApiResponseDto.<MessageDto>builder()
                 .status(HttpStatus.OK.value())

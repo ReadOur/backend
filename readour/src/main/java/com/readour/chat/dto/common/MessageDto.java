@@ -30,9 +30,11 @@ public class MessageDto {
     @Schema(description = "채팅방 ID", example = "101")
     private Long roomId;
 
-    @NotNull(message = "senderId는 필수입니다.")
-    @Schema(description = "보낸 사람 ID", example = "2025001")
+    @Schema(description = "보낸 사람 ID", example = "2025001", accessMode = Schema.AccessMode.READ_ONLY)
     private Long senderId;
+
+    @Schema(description = "보낸 사람 닉네임", example = "준호", nullable = true)
+    private String senderNickname;
 
     @NotBlank(message = "type은 필수입니다.")
     @Schema(description = "메시지 타입 (TEXT, IMAGE, POLL 등)", example = "TEXT")

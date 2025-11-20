@@ -6,13 +6,18 @@ import com.readour.chat.dto.common.MessageDto;
 import com.readour.chat.dto.response.MessageListResponse;
 import com.readour.chat.entity.ChatMessage;
 import com.readour.chat.entity.ChatMessageHide;
+import com.readour.chat.entity.ChatReadReceipt;
 import com.readour.chat.repository.ChatMessageHideRepository;
 import com.readour.chat.repository.ChatMessageRepository;
 import com.readour.chat.repository.ChatRoomMemberRepository;
+import com.readour.chat.repository.ChatReadReceiptRepository;
+import com.readour.chat.repository.ChatRoomRepository;
 import com.readour.common.entity.FileAsset;
+import com.readour.common.entity.User;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.exception.CustomException;
 import com.readour.common.service.FileAssetService;
+import com.readour.common.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -28,6 +33,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -38,13 +46,17 @@ public class ChatMessageService {
     private static final String TOPIC = "chat-messages";
     private static final int DEFAULT_LIMIT = 50;
     private static final int MAX_LIMIT = 100;
+    private static final String UNKNOWN_SENDER_NICKNAME = "탈퇴한 사용자";
 
     private final ChatMessageRepository chatMessageRepository;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
     private final ChatMessageHideRepository chatMessageHideRepository;
+    private final ChatReadReceiptRepository chatReadReceiptRepository;
+    private final ChatRoomRepository chatRoomRepository;
     private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
     private final FileAssetService fileAssetService;
+    private final UserRepository userRepository;
 
     @Transactional
     public MessageDto send(MessageDto dto) {
@@ -55,6 +67,9 @@ public class ChatMessageService {
             throw new CustomException(ErrorCode.BAD_REQUEST, "roomId와 senderId는 필수입니다.");
         }
 
+        chatRoomMemberRepository.findByRoomIdAndUserIdAndIsActiveTrue(dto.getRoomId(), dto.getSenderId())
+                .orElseThrow(() -> new CustomException(ErrorCode.FORBIDDEN, "채팅방에 참여 중이 아닙니다."));
+
         LocalDateTime createdAt = dto.getCreatedAt() != null ? dto.getCreatedAt() : LocalDateTime.now();
 
         ChatMessage entity = dto.toEntity();
@@ -62,6 +77,9 @@ public class ChatMessageService {
 
         ChatMessage saved = chatMessageRepository.save(entity);
         MessageDto response = MessageDto.fromEntity(saved);
+        populateSenderNickname(response);
+        recordLatestRead(response.getRoomId(), response.getSenderId(), response.getId());
+        touchRoomUpdatedAt(response.getRoomId());
 
         kafkaTemplate.send(TOPIC, String.valueOf(response.getRoomId()), serialize(response));
 
@@ -107,6 +125,9 @@ public class ChatMessageService {
         ChatMessage saved = chatMessageRepository.save(entity);
         fileAssetService.linkFile(storedFile.getFileId(), "CHAT_MESSAGE", saved.getId());
         MessageDto response = MessageDto.fromEntity(saved);
+        populateSenderNickname(response);
+        recordLatestRead(response.getRoomId(), response.getSenderId(), response.getId());
+        touchRoomUpdatedAt(response.getRoomId());
 
         kafkaTemplate.send(TOPIC, String.valueOf(response.getRoomId()), serialize(response));
 
@@ -154,7 +175,7 @@ public class ChatMessageService {
                 });
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public MessageListResponse getTimeline(Long roomId, Long userId, LocalDateTime before, Integer limit) {
         if (roomId == null) {
             throw new CustomException(ErrorCode.BAD_REQUEST, "roomId는 필수입니다.");
@@ -197,8 +218,12 @@ public class ChatMessageService {
                 .map(MessageDto::fromEntity)
                 .collect(Collectors.toCollection(ArrayList::new));
 
+        populateSenderNicknames(items);
+
         if (!items.isEmpty()) {
             Collections.reverse(items);
+            Long latestMsgId = items.get(items.size() - 1).getId();
+            recordLatestRead(roomId, userId, latestMsgId);
         }
 
         LocalDateTime nextBefore = (slice.hasNext() && !entities.isEmpty())
@@ -221,5 +246,93 @@ public class ChatMessageService {
         } catch (JsonProcessingException e) {
             throw new CustomException(ErrorCode.INTERNAL_SERVER_ERROR, "메시지 직렬화에 실패했습니다.");
         }
+    }
+
+    private void populateSenderNicknames(List<MessageDto> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+
+        Set<Long> senderIds = messages.stream()
+                .map(MessageDto::getSenderId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(HashSet::new));
+
+        if (senderIds.isEmpty()) {
+            return;
+        }
+
+        Map<Long, String> nicknameMap = userRepository.findAllById(senderIds).stream()
+                .collect(Collectors.toMap(User::getId, User::getNickname));
+
+        for (MessageDto message : messages) {
+            Long senderId = message.getSenderId();
+            if (senderId == null) {
+                continue;
+            }
+            message.setSenderNickname(resolveNickname(senderId, nicknameMap));
+        }
+    }
+
+    private void populateSenderNickname(MessageDto message) {
+        if (message == null || message.getSenderId() == null) {
+            return;
+        }
+        message.setSenderNickname(resolveNickname(message.getSenderId()));
+    }
+
+    private String resolveNickname(Long senderId, Map<Long, String> nicknameMap) {
+        String nickname = nicknameMap.get(senderId);
+        if (nickname == null || nickname.isBlank()) {
+            return UNKNOWN_SENDER_NICKNAME;
+        }
+        return nickname;
+    }
+
+    private String resolveNickname(Long senderId) {
+        return userRepository.findById(senderId)
+                .map(User::getNickname)
+                .filter(nickname -> !nickname.isBlank())
+                .orElse(UNKNOWN_SENDER_NICKNAME);
+    }
+
+    private void recordLatestRead(Long roomId, Long userId, Long messageId) {
+        if (roomId == null || userId == null || messageId == null) {
+            return;
+        }
+
+        Optional<ChatReadReceipt> latestReceipt = chatReadReceiptRepository
+                .findTopByRoomIdAndUserIdOrderByMsgIdDesc(roomId, userId);
+        if (latestReceipt.isPresent() && latestReceipt.get().getMsgId() >= messageId) {
+            return;
+        }
+
+        ChatReadReceipt receipt = ChatReadReceipt.builder()
+                .roomId(roomId)
+                .userId(userId)
+                .msgId(messageId)
+                .readAt(LocalDateTime.now())
+                .build();
+
+        chatReadReceiptRepository.save(receipt);
+        chatRoomMemberRepository.findByRoomIdAndUserId(roomId, userId)
+                .ifPresent(member -> {
+                    Long current = member.getLastReadMsgId();
+                    if (current == null || current < messageId) {
+                        member.setLastReadMsgId(messageId);
+                        chatRoomMemberRepository.save(member);
+                    }
+                });
+    }
+
+    private void touchRoomUpdatedAt(Long roomId) {
+        if (roomId == null) {
+            return;
+        }
+        chatRoomRepository.findById(roomId)
+                .ifPresent(room -> {
+                    room.setUpdatedAt(LocalDateTime.now());
+                    chatRoomRepository.save(room);
+                });
     }
 }

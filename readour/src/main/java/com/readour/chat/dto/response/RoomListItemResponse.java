@@ -51,5 +51,14 @@ public class RoomListItemResponse {
 
         @Schema(description = "마지막 메시지 생성 시각", example = "2025-01-01T09:55:00")
         private LocalDateTime createdAt;
+
+        @Schema(description = "마지막 메시지 타입", example = "TEXT")
+        private String type;
+
+        @Schema(description = "보낸 사람 ID", example = "2025001")
+        private Long senderId;
+
+        @Schema(description = "보낸 사람 닉네임", example = "준호")
+        private String senderNickname;
     }
 }
