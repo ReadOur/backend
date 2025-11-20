@@ -21,6 +21,7 @@ import com.readour.chat.repository.projection.RoomMemberCountProjection;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.enums.Role;
 import com.readour.common.exception.CustomException;
+import com.readour.common.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.data.domain.Page;
@@ -50,10 +51,12 @@ public class ChatRoomService {
     private static final int DEFAULT_SIZE = 20;
     private static final int MAX_PAGE_SIZE = 50;
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final String UNKNOWN_SENDER_NICKNAME = "탈퇴한 사용자";
 
     private final ChatRoomRepository chatRoomRepository;
     private final ChatRoomMemberRepository chatRoomMemberRepository;
     private final ChatMessageRepository chatMessageRepository;
+    private final UserRepository userRepository;
 
     @Transactional(readOnly = true)
     public RoomListPageResponse getMyRooms(Long userId, String query, int page, int size) {
@@ -88,9 +91,8 @@ public class ChatRoomService {
                 .collect(Collectors.toMap(ChatRoom::getId, room -> room));
 
         Comparator<ChatRoomMember> comparator = Comparator
-                .comparing((ChatRoomMember m) -> m.getPinnedAt() == null ? 1 : 0)
+                .comparing((ChatRoomMember m) -> m.getPinOrder() == null ? 1 : 0)
                 .thenComparing(m -> Objects.requireNonNullElse(m.getPinOrder(), Integer.MAX_VALUE))
-                .thenComparing(ChatRoomMember::getPinnedAt, Comparator.nullsLast(Comparator.reverseOrder()))
                 .thenComparing((ChatRoomMember m) -> getRoomUpdatedAt(roomMap.get(m.getRoomId())),
                         Comparator.nullsLast(Comparator.reverseOrder()))
                 .thenComparing(ChatRoomMember::getRoomId);
@@ -134,7 +136,7 @@ public class ChatRoomService {
         }
 
         String normalizedQuery = StringUtils.isBlank(query) ? null : query.trim();
-        Sort sort = Sort.by(Sort.Order.asc("name"), Sort.Order.asc("id"));
+        Sort sort = Sort.by(Sort.Order.desc("updatedAt"), Sort.Order.desc("id"));
         Pageable pageable = PageRequest.of(page, size, sort);
 
         Page<ChatRoom> roomPage = chatRoomRepository.findActivePublicRooms(normalizedQuery, pageable);
@@ -284,6 +286,9 @@ public class ChatRoomService {
                 .id(message.getId())
                 .preview(extractPreview(message))
                 .createdAt(message.getCreatedAt())
+                .type(message.getType())
+                .senderId(message.getSenderId())
+                .senderNickname(resolveNickname(message.getSenderId()))
                 .build();
     }
 
@@ -334,5 +339,14 @@ public class ChatRoomService {
                 .kickedBy(null)
                 .kickReason(null)
                 .build();
+    }
+
+    private String resolveNickname(Long userId) {
+        if (userId == null) {
+            return UNKNOWN_SENDER_NICKNAME;
+        }
+        return userRepository.findById(userId)
+                .map(user -> StringUtils.defaultIfBlank(user.getNickname(), UNKNOWN_SENDER_NICKNAME))
+                .orElse(UNKNOWN_SENDER_NICKNAME);
     }
 }

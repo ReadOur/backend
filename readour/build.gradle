@@ -47,8 +47,8 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-mail'
 
 	implementation platform('software.amazon.awssdk:bom:2.25.61')
-    implementation 'software.amazon.awssdk:s3'
-    implementation 'org.apache.commons:commons-lang3:3.14.0'
+	implementation 'software.amazon.awssdk:s3'
+	implementation 'org.apache.commons:commons-lang3:3.14.0'
 
 	implementation 'com.fasterxml.jackson.datatype:jackson-datatype-jsr310'
 
