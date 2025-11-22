@@ -93,15 +93,23 @@ public class ChatWebSocketHandshakeInterceptor implements HandshakeInterceptor {
     }
 
     private Long extractUserId(HttpServletRequest request) {
-        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
-        if (!StringUtils.hasText(authorization) || !authorization.startsWith("Bearer ")) {
-            throw new CustomException(ErrorCode.UNAUTHORIZED, "JWT 토큰이 필요합니다.");
-        }
-        String token = authorization.substring(7);
-        if (!StringUtils.hasText(token)) {
-            throw new CustomException(ErrorCode.INVALID_TOKEN, "유효하지 않은 토큰입니다.");
-        }
+        String token = resolveToken(request);
         return jwtTokenProvider.getUserId(token);
+    }
+
+    private String resolveToken(HttpServletRequest request) {
+        String authorization = request.getHeader(HttpHeaders.AUTHORIZATION);
+        if (StringUtils.hasText(authorization) && authorization.startsWith("Bearer ")) {
+            String headerToken = authorization.substring(7);
+            if (StringUtils.hasText(headerToken)) {
+                return headerToken;
+            }
+        }
+        String queryToken = request.getParameter("token");
+        if (StringUtils.hasText(queryToken)) {
+            return queryToken;
+        }
+        throw new CustomException(ErrorCode.UNAUTHORIZED, "JWT 토큰이 필요합니다.");
     }
 
     private HttpStatus mapToStatus(ErrorCode errorCode) {
