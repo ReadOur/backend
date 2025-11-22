@@ -62,6 +62,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (StringUtils.hasText(bearerToken) && bearerToken.startsWith(BEARER_PREFIX)) {
             return bearerToken.substring(BEARER_PREFIX.length());
         }
+        // WebSocket handshake는 Authorization 헤더를 실을 수 없으므로 쿼리 파라미터로 전달된 token도 허용한다.
+        String queryToken = request.getParameter("token");
+        if (StringUtils.hasText(queryToken) && request.getServletPath().startsWith("/ws/")) {
+            return queryToken;
+        }
         return null;
     }
 

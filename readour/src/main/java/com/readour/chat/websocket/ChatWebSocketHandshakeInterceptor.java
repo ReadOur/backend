@@ -121,6 +121,6 @@ public class ChatWebSocketHandshakeInterceptor implements HandshakeInterceptor {
 
     private void reject(ServerHttpResponse response, HttpStatus status, String reason) {
         response.setStatusCode(status);
-        log.debug("WebSocket handshake rejected: status={}, reason={}", status, reason);
+        log.info("WebSocket handshake rejected: status={}, reason={}", status, reason);
     }
 }
