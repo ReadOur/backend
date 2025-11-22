@@ -35,7 +35,7 @@ public class ChatWebSocketHandshakeInterceptor implements HandshakeInterceptor {
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
                                    WebSocketHandler wsHandler, Map<String, Object> attributes) {
         if (!(request instanceof ServletServerHttpRequest servletRequest)) {
-            response.setStatusCode(HttpStatus.BAD_REQUEST);
+            reject(response, HttpStatus.BAD_REQUEST, "Not a servlet request");
             return false;
         }
 
@@ -49,7 +49,7 @@ public class ChatWebSocketHandshakeInterceptor implements HandshakeInterceptor {
         try {
             vars = URI_TEMPLATE.match(requestUri);
         } catch (IllegalArgumentException e) {
-            response.setStatusCode(HttpStatus.BAD_REQUEST);
+            reject(response, HttpStatus.BAD_REQUEST, "Invalid path: " + requestUri);
             return false;
         }
 
@@ -58,24 +58,24 @@ public class ChatWebSocketHandshakeInterceptor implements HandshakeInterceptor {
         try {
             userId = extractUserId(httpServletRequest);
         } catch (CustomException ex) {
-            response.setStatusCode(mapToStatus(ex.getErrorCode()));
+            reject(response, mapToStatus(ex.getErrorCode()), ex.getMessage());
             return false;
         }
         if (roomIdValue == null) {
-            response.setStatusCode(HttpStatus.BAD_REQUEST);
+            reject(response, HttpStatus.BAD_REQUEST, "roomId missing in path");
             return false;
         }
         Long roomId;
         try {
             roomId = Long.valueOf(roomIdValue);
         } catch (NumberFormatException e) {
-            response.setStatusCode(HttpStatus.BAD_REQUEST);
+            reject(response, HttpStatus.BAD_REQUEST, "roomId is not a number: " + roomIdValue);
             return false;
         }
 
         boolean isMember = chatRoomMemberRepository.findByRoomIdAndUserIdAndIsActiveTrue(roomId, userId).isPresent();
         if (!isMember) {
-            response.setStatusCode(HttpStatus.FORBIDDEN);
+            reject(response, HttpStatus.FORBIDDEN, "User is not an active member. roomId=" + roomId + ", userId=" + userId);
             return false;
         }
 
@@ -117,5 +117,10 @@ public class ChatWebSocketHandshakeInterceptor implements HandshakeInterceptor {
             case TOKEN_EXPIRED, INVALID_TOKEN, UNAUTHORIZED -> HttpStatus.UNAUTHORIZED;
             default -> HttpStatus.BAD_REQUEST;
         };
+    }
+
+    private void reject(ServerHttpResponse response, HttpStatus status, String reason) {
+        response.setStatusCode(status);
+        log.debug("WebSocket handshake rejected: status={}, reason={}", status, reason);
     }
 }
