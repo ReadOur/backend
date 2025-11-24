@@ -1,5 +1,7 @@
 package com.readour.ai.enums;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
 import com.readour.chat.enums.ChatRoomScope;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.exception.CustomException;
@@ -78,7 +80,7 @@ public enum AiCommandType {
     );
 
     private static final int MIN_LIMIT = 5;
-    private static final int MAX_LIMIT = 100;
+    private static final int MAX_LIMIT = 400;
 
     private final String action;
     private final String taskType;
@@ -127,6 +129,7 @@ public enum AiCommandType {
         return requiresTranscript;
     }
 
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
     public static AiCommandType from(String raw) {
         if (raw == null || raw.isBlank()) {
             throw new CustomException(ErrorCode.BAD_REQUEST, "command가 비어 있습니다.");
@@ -139,5 +142,10 @@ public enum AiCommandType {
                         .anyMatch(alias -> alias.equals(normalized)))
                 .findFirst()
                 .orElseThrow(() -> new CustomException(ErrorCode.BAD_REQUEST, "지원하지 않는 command입니다: " + raw));
+    }
+
+    @JsonValue
+    public String toJson() {
+        return name();
     }
 }
