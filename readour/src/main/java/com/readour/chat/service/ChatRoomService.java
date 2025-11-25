@@ -273,6 +273,7 @@ public class ChatRoomService {
         return RoomListItemResponse.builder()
                 .roomId(room.getId())
                 .name(room.getName())
+                .role(member.getRole())
                 .lastMsg(lastMessage)
                 .unreadCount(unreadCount)
                 .updatedAt(room.getUpdatedAt())
