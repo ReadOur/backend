@@ -12,6 +12,7 @@ import com.readour.chat.entity.ChatAiSession;
 import com.readour.chat.entity.ChatAiSessionSummary;
 import com.readour.chat.entity.ChatMessage;
 import com.readour.chat.entity.ChatRoom;
+import com.readour.chat.dto.common.MessageDto;
 import com.readour.chat.enums.ChatAiSessionStatus;
 import com.readour.chat.enums.ChatRoomScope;
 import com.readour.chat.repository.AiJobRepository;
@@ -20,6 +21,7 @@ import com.readour.chat.repository.ChatAiSessionSummaryRepository;
 import com.readour.chat.repository.ChatMessageRepository;
 import com.readour.chat.repository.ChatRoomMemberRepository;
 import com.readour.chat.repository.ChatRoomRepository;
+import com.readour.chat.service.ChatMessageService;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.exception.CustomException;
 import lombok.extern.slf4j.Slf4j;
@@ -68,6 +70,7 @@ public class AiService {
     private final ChatMessageRepository chatMessageRepository;
     private final ChatAiSessionRepository chatAiSessionRepository;
     private final ChatAiSessionSummaryRepository chatAiSessionSummaryRepository;
+    private final ChatMessageService chatMessageService;
     private final ObjectMapper objectMapper;
     private final ChatClient chatClient;
 
@@ -77,6 +80,7 @@ public class AiService {
                      ChatMessageRepository chatMessageRepository,
                      ChatAiSessionRepository chatAiSessionRepository,
                      ChatAiSessionSummaryRepository chatAiSessionSummaryRepository,
+                     ChatMessageService chatMessageService,
                      ObjectMapper objectMapper,
                      ChatClient.Builder chatClientBuilder) {
         this.aiJobRepository = aiJobRepository;
@@ -85,6 +89,7 @@ public class AiService {
         this.chatMessageRepository = chatMessageRepository;
         this.chatAiSessionRepository = chatAiSessionRepository;
         this.chatAiSessionSummaryRepository = chatAiSessionSummaryRepository;
+        this.chatMessageService = chatMessageService;
         this.objectMapper = objectMapper;
         this.chatClient = chatClientBuilder.build();
     }
@@ -193,6 +198,7 @@ public class AiService {
             try {
                 JsonNode payload = callModelAsJson(promptBundle);
                 completeJob(job, payload, startedInstant);
+                publishAiMessage(room.getId(), requesterId, commandType, payload);
                 return AiJobResponse.from(job, objectMapper);
             } catch (CustomException ex) {
                 failJob(job, startedInstant, ex.getMessage());
@@ -289,6 +295,7 @@ public class AiService {
         try {
             JsonNode payload = callModelAsJson(promptBundle);
             completeJob(job, payload, startedInstant);
+            publishAiMessage(room.getId(), requesterId, AiCommandType.SESSION_SUMMARY_SLICE, payload);
 
             ChatAiSessionSummary summary = ChatAiSessionSummary.builder()
                     .sessionId(session.getId())
@@ -456,6 +463,7 @@ public class AiService {
             responsePayload.set("plan", payload);
 
             completeJob(job, responsePayload, startedInstant);
+            publishAiMessage(room.getId(), requesterId, AiCommandType.SESSION_CLOSING, responsePayload);
             return AiJobResponse.from(job, objectMapper);
         } catch (CustomException ex) {
             failJob(job, startedInstant, ex.getMessage());
@@ -850,6 +858,40 @@ public class AiService {
                 .map(msg -> msg.getId() + "|" + (msg.getBody() == null ? "" : msg.getBody()))
                 .collect(Collectors.joining("#"));
         return hashRaw(raw);
+    }
+
+    private void publishAiMessage(Long roomId,
+                                  Long senderId,
+                                  AiCommandType commandType,
+                                  JsonNode payload) {
+        if (!shouldBroadcastAsMessage(commandType) || payload == null || payload.isNull()) {
+            return;
+        }
+
+        ObjectNode body = objectMapper.createObjectNode();
+        body.put("command", commandType.name());
+        body.set("payload", payload);
+
+        MessageDto message = MessageDto.builder()
+                .roomId(roomId)
+                .senderId(senderId)
+                .type("AI_ASSIST")
+                .body(body)
+                .build();
+        try {
+            chatMessageService.send(message);
+        } catch (CustomException ex) {
+            log.warn("AI 메시지 브로드캐스트 실패 roomId={}, command={}, reason={}", roomId, commandType, ex.getMessage());
+        } catch (Exception ex) {
+            log.error("AI 메시지 브로드캐스트 실패 roomId={}, command={}", roomId, commandType, ex);
+        }
+    }
+
+    private boolean shouldBroadcastAsMessage(AiCommandType commandType) {
+        return switch (commandType) {
+            case GROUP_QUESTION_GENERATOR, GROUP_KEYPOINTS, GROUP_CLOSING, SESSION_SUMMARY_SLICE, SESSION_CLOSING -> true;
+            default -> false;
+        };
     }
 
     private String buildSessionSliceDedupeKey(Long sessionId, Long startMsgId, Long endMsgId) {
