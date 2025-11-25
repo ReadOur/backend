@@ -1,5 +1,6 @@
 package com.readour.chat.dto.response;
 
+import com.readour.common.enums.Role;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -20,6 +21,9 @@ public class RoomListItemResponse {
 
     @Schema(description = "채팅방 이름", example = "프로젝트 A")
     private String name;
+
+    @Schema(description = "내 역할", example = "OWNER")
+    private Role role;
 
     @Schema(description = "마지막 메시지 정보", nullable = true)
     private LastMessage lastMsg;

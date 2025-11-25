@@ -44,6 +44,7 @@ import java.util.Collections;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -53,6 +54,13 @@ public class AiService {
     private static final DateTimeFormatter MSG_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final DateTimeFormatter DATE_LINE_FORMATTER = DateTimeFormatter.ofPattern("yyyy년 M월 d일");
     private static final int MIN_SESSION_SLICE_MESSAGES = 5;
+    private static final int ADAPTIVE_MIN_CONTEXT = 50;
+    private static final int ADAPTIVE_MAX_CONTEXT = 400;
+    private static final int MAX_TRANSCRIPT_ATTEMPTS = 4;
+    private static final int MAX_TRANSCRIPT_DURATION_MS = 10_000;
+    private static final Pattern MEANINGLESS_TEXT_PATTERN = Pattern.compile(
+            "^[\\s\\p{Punct}]*(?:[ㅋㅎㅠㅜ]+|ㅇ+)[\\s\\p{Punct}]*$",
+            Pattern.CASE_INSENSITIVE);
 
     private final AiJobRepository aiJobRepository;
     private final ChatRoomRepository chatRoomRepository;
@@ -91,7 +99,7 @@ public class AiService {
             throw new CustomException(ErrorCode.BAD_REQUEST, "요청자 정보가 필요합니다.");
         }
 
-        AiCommandType commandType = AiCommandType.from(request.getCommand());
+        AiCommandType commandType = request.getCommand();
         ChatRoom room = chatRoomRepository.findById(roomId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "채팅방을 찾을 수 없습니다."));
 
@@ -115,40 +123,91 @@ public class AiService {
         };
     }
 
+    public void runScheduledSessionSummaries() {
+        List<ChatAiSession> activeSessions = chatAiSessionRepository.findAllByStatus(ChatAiSessionStatus.ACTIVE);
+        if (activeSessions.isEmpty()) {
+            return;
+        }
+
+        for (ChatAiSession session : activeSessions) {
+            try {
+                summarizeSessionSliceScheduled(session);
+            } catch (CustomException ex) {
+                if (ex.getErrorCode() != ErrorCode.BAD_REQUEST) {
+                    log.warn("세션 자동 요약 실패 sessionId={}, message={}", session.getId(), ex.getMessage());
+                }
+            } catch (Exception ex) {
+                log.error("세션 자동 요약 처리 중 오류 sessionId={}", session.getId(), ex);
+            }
+        }
+    }
+
     private AiJobResponse runTranscriptCommand(ChatRoom room,
                                                ChatRoomScope scope,
                                                Long requesterId,
                                                AiCommandRequest request,
                                                AiCommandType commandType) {
-        int resolvedLimit = commandType.resolveLimit(request.getMessageLimit());
-        List<ChatMessage> contextMessages = loadRecentMessages(room.getId(), resolvedLimit);
-        if (contextMessages.isEmpty()) {
-            throw new CustomException(ErrorCode.BAD_REQUEST, "요약할 메시지가 충분하지 않습니다.");
+        List<Integer> contextWindows = resolveContextWindows(commandType, request.getMessageLimit());
+        AiJobResponse lastExistingResponse = null;
+        Instant budgetStart = Instant.now();
+        int attempt = 0;
+
+        for (int limit : contextWindows) {
+            attempt++;
+            if (attempt > MAX_TRANSCRIPT_ATTEMPTS) {
+                break;
+            }
+            if (Duration.between(budgetStart, Instant.now()).toMillis() > MAX_TRANSCRIPT_DURATION_MS) {
+                break;
+            }
+
+            List<ChatMessage> contextMessages = loadRecentMessages(room.getId(), limit);
+            List<ChatMessage> filteredMessages = filterMeaningfulMessages(contextMessages);
+            if (filteredMessages.isEmpty()) {
+                continue;
+            }
+
+            String transcript = buildTranscript(filteredMessages);
+            PromptBundle promptBundle = buildPrompt(commandType, room, transcript, request);
+
+            ObjectNode scopeParam = buildRoomScopeNode(room.getId(), scope, filteredMessages.size());
+            ObjectNode options = buildStandardOptions(commandType, request, filteredMessages.size());
+            String dedupeKey = buildDedupeKey(room.getId(), commandType, filteredMessages);
+
+            AiJob existingJob = aiJobRepository.findTopByDedupeKey(dedupeKey).orElse(null);
+            if (existingJob != null) {
+                if (!"COMPLETED".equals(existingJob.getStatus())) {
+                    return AiJobResponse.from(existingJob, objectMapper);
+                }
+                lastExistingResponse = AiJobResponse.from(existingJob, objectMapper);
+                continue;
+            }
+
+            Instant startedInstant = Instant.now();
+            LocalDateTime startedAt = LocalDateTime.now();
+            AiJob job = buildJob(room.getId(), requesterId, commandType, "ROOM", scopeParam, options, promptBundle, startedAt, dedupeKey);
+            if (!"RUNNING".equals(job.getStatus())) {
+                return AiJobResponse.from(job, objectMapper);
+            }
+
+            try {
+                JsonNode payload = callModelAsJson(promptBundle);
+                completeJob(job, payload, startedInstant);
+                return AiJobResponse.from(job, objectMapper);
+            } catch (CustomException ex) {
+                failJob(job, startedInstant, ex.getMessage());
+                throw ex;
+            } catch (Exception ex) {
+                log.error("AI 명령 처리 중 오류", ex);
+                failJob(job, startedInstant, "LLM 처리 중 오류");
+                throw new CustomException(ErrorCode.INTERNAL_SERVER_ERROR, "AI 응답 생성 중 오류가 발생했습니다.");
+            }
         }
 
-        String transcript = buildTranscript(contextMessages);
-        PromptBundle promptBundle = buildPrompt(commandType, room, transcript, request);
-
-        Instant startedInstant = Instant.now();
-        LocalDateTime startedAt = LocalDateTime.now();
-
-        ObjectNode scopeParam = buildRoomScopeNode(room.getId(), scope, contextMessages.size());
-        ObjectNode options = buildStandardOptions(commandType, request, contextMessages.size());
-        String dedupeKey = buildDedupeKey(room.getId(), commandType, contextMessages);
-        AiJob job = buildJob(room.getId(), requesterId, commandType, "ROOM", scopeParam, options, promptBundle, startedAt, dedupeKey);
-
-        try {
-            JsonNode payload = callModelAsJson(promptBundle);
-            completeJob(job, payload, startedInstant);
-            return AiJobResponse.from(job, objectMapper);
-        } catch (CustomException ex) {
-            failJob(job, startedInstant, ex.getMessage());
-            throw ex;
-        } catch (Exception ex) {
-            log.error("AI 명령 처리 중 오류", ex);
-            failJob(job, startedInstant, "LLM 처리 중 오류");
-            throw new CustomException(ErrorCode.INTERNAL_SERVER_ERROR, "AI 응답 생성 중 오류가 발생했습니다.");
+        if (lastExistingResponse != null) {
+            return lastExistingResponse;
         }
+        return buildFallbackResponse(room, scope, requesterId, commandType);
     }
 
     private AiJobResponse startSession(Long roomId,
@@ -198,15 +257,16 @@ public class AiService {
 
         int limit = AiCommandType.SESSION_SUMMARY_SLICE.resolveLimit(request.getMessageLimit());
         List<ChatMessage> sliceMessages = loadSessionSliceMessages(room.getId(), session.getLastSummaryMsgId(), limit);
-        if (sliceMessages.size() < MIN_SESSION_SLICE_MESSAGES) {
+        List<ChatMessage> filteredMessages = filterMeaningfulMessages(sliceMessages);
+        if (filteredMessages.size() < MIN_SESSION_SLICE_MESSAGES) {
             throw new CustomException(ErrorCode.BAD_REQUEST, "요약할 신규 메시지가 충분하지 않습니다.");
         }
 
-        String transcript = buildTranscript(sliceMessages);
+        String transcript = buildTranscript(filteredMessages);
         PromptBundle promptBundle = buildSessionSlicePrompt(room, transcript);
 
-        Long startMsgId = sliceMessages.get(0).getId();
-        Long endMsgId = sliceMessages.get(sliceMessages.size() - 1).getId();
+        Long startMsgId = filteredMessages.get(0).getId();
+        Long endMsgId = filteredMessages.get(filteredMessages.size() - 1).getId();
 
         ObjectNode scopeNode = objectMapper.createObjectNode();
         scopeNode.put("roomId", room.getId());
@@ -217,7 +277,7 @@ public class AiService {
 
         ObjectNode options = objectMapper.createObjectNode();
         options.put("command", AiCommandType.SESSION_SUMMARY_SLICE.name());
-        options.put("contextMessages", sliceMessages.size());
+        options.put("contextMessages", filteredMessages.size());
         if (request.getNote() != null && !request.getNote().isBlank()) {
             options.put("note", request.getNote());
         }
@@ -249,6 +309,78 @@ public class AiService {
             log.error("세션 부분 요약 생성 중 오류", ex);
             failJob(job, startedInstant, "세션 부분 요약 실패");
             throw new CustomException(ErrorCode.INTERNAL_SERVER_ERROR, "세션 요약을 생성하지 못했습니다.");
+        }
+    }
+
+    private void summarizeSessionSliceScheduled(ChatAiSession session) {
+        if (session.getStatus() != ChatAiSessionStatus.ACTIVE) {
+            return;
+        }
+
+        ChatRoom room = chatRoomRepository.findById(session.getRoomId())
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "채팅방을 찾을 수 없습니다."));
+        ChatRoomScope scope;
+        try {
+            scope = ChatRoomScope.from(room.getScope());
+        } catch (IllegalArgumentException ex) {
+            log.warn("지원하지 않는 채팅방 스코프로 세션 요약을 건너뜀 roomId={}, scope={}", room.getId(), room.getScope());
+            return;
+        }
+
+        int limit = AiCommandType.SESSION_SUMMARY_SLICE.resolveLimit(null);
+        List<ChatMessage> sliceMessages = loadSessionSliceMessages(session.getRoomId(), session.getLastSummaryMsgId(), limit);
+        List<ChatMessage> filteredMessages = filterMeaningfulMessages(sliceMessages);
+        if (filteredMessages.size() < MIN_SESSION_SLICE_MESSAGES) {
+            return;
+        }
+
+        String transcript = buildTranscript(filteredMessages);
+        PromptBundle promptBundle = buildSessionSlicePrompt(room, transcript);
+
+        Long startMsgId = filteredMessages.get(0).getId();
+        Long endMsgId = filteredMessages.get(filteredMessages.size() - 1).getId();
+        String dedupeKey = buildSessionSliceDedupeKey(session.getId(), startMsgId, endMsgId);
+        if (aiJobRepository.findTopByDedupeKey(dedupeKey).isPresent()) {
+            return;
+        }
+
+        ObjectNode scopeNode = objectMapper.createObjectNode();
+        scopeNode.put("roomId", room.getId());
+        scopeNode.put("sessionId", session.getId());
+        scopeNode.put("roomScope", scope.name());
+        scopeNode.put("sliceStartMsgId", startMsgId);
+        scopeNode.put("sliceEndMsgId", endMsgId);
+
+        ObjectNode options = objectMapper.createObjectNode();
+        options.put("command", AiCommandType.SESSION_SUMMARY_SLICE.name());
+        options.put("contextMessages", filteredMessages.size());
+        options.put("trigger", "SCHEDULED");
+
+        Instant startedInstant = Instant.now();
+        LocalDateTime startedAt = LocalDateTime.now();
+        AiJob job = buildJob(room.getId(), session.getStartedBy(), AiCommandType.SESSION_SUMMARY_SLICE, "SESSION", scopeNode, options, promptBundle, startedAt, dedupeKey);
+
+        try {
+            JsonNode payload = callModelAsJson(promptBundle);
+            completeJob(job, payload, startedInstant);
+
+            ChatAiSessionSummary summary = ChatAiSessionSummary.builder()
+                    .sessionId(session.getId())
+                    .startMsgId(startMsgId)
+                    .endMsgId(endMsgId)
+                    .summaryPayload(writeJson(payload))
+                    .build();
+            chatAiSessionSummaryRepository.save(summary);
+
+            session.setLastSummaryMsgId(endMsgId);
+            chatAiSessionRepository.save(session);
+        } catch (CustomException ex) {
+            failJob(job, startedInstant, ex.getMessage());
+            throw ex;
+        } catch (Exception ex) {
+            log.error("세션 자동 요약 생성 중 오류 sessionId={}", session.getId(), ex);
+            failJob(job, startedInstant, "세션 자동 요약 실패");
+            throw new CustomException(ErrorCode.INTERNAL_SERVER_ERROR, "세션 자동 요약에 실패했습니다.");
         }
     }
 
@@ -366,6 +498,32 @@ public class AiService {
                 .collect(Collectors.joining("\n"));
     }
 
+    private List<ChatMessage> filterMeaningfulMessages(List<ChatMessage> messages) {
+        return messages.stream()
+                .filter(this::isMeaningfulMessage)
+                .toList();
+    }
+
+    private boolean isMeaningfulMessage(ChatMessage message) {
+        String text = extractBodyText(message);
+        if (text == null) {
+            return false;
+        }
+        String trimmed = text.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        // 필수 내용 없이 감탄사/이모티콘만 있는 경우 제외
+        if (MEANINGLESS_TEXT_PATTERN.matcher(trimmed).matches()) {
+            return false;
+        }
+        // 한 글자 이내이면서 기호성 문자가 주를 이루면 제외
+        if (trimmed.length() <= 1 && !Character.isLetterOrDigit(trimmed.charAt(0))) {
+            return false;
+        }
+        return true;
+    }
+
     private PromptBundle buildPrompt(AiCommandType type,
                                      ChatRoom room,
                                      String transcript,
@@ -391,6 +549,7 @@ public class AiService {
                 systemContent = """
                         너는 독서 커뮤니티 공개 채팅방의 대화를 안전하게 요약하는 전문가 어시스턴트다.
                         응답은 반드시 한국어 JSON 문자열이어야 하며, 민감한 표현을 제거한다.
+                        정보가 부족하면 더 넓은 대화 로그가 필요하다고 명시하고, 충분하면 즉시 응답한다.
                         """;
                 userContent = commonHeader + """
                         최근 메시지 타임라인:
@@ -406,6 +565,7 @@ public class AiService {
                 systemContent = """
                         너는 독서 모임 토론을 이어갈 추가 질문을 제안하는 조력자다.
                         기존 논의와 자연스럽게 연결되도록 중복되지 않는 질문을 제시하고, 답변은 JSON 문자열로만 응답한다.
+                        정보가 부족하면 더 넓은 대화 로그가 필요하다고 명시하고, 충분하면 즉시 응답한다.
                         """;
                 userContent = commonHeader + """
                         최근 토론 대화:
@@ -421,6 +581,7 @@ public class AiService {
                 systemContent = """
                         너는 독서 모임 토론의 핵심을 정리하고 공감대와 이견을 구분해 주는 비서다.
                         응답은 JSON 포맷이어야 하며 모든 텍스트는 한국어여야 한다.
+                        정보가 부족하면 더 넓은 대화 로그가 필요하다고 명시하고, 충분하면 즉시 응답한다.
                         """;
                 userContent = commonHeader + """
                         토론 타임라인:
@@ -436,6 +597,7 @@ public class AiService {
                 systemContent = """
                         너는 독서 모임 토론을 마무리하는 사회자다.
                         토론 내용을 바탕으로 자연스럽고 따뜻한 어조의 마감문을 작성하고, JSON 포맷으로 요약 결과를 반환한다.
+                        정보가 부족하면 더 넓은 대화 로그가 필요하다고 명시하고, 충분하면 즉시 응답한다.
                         """;
                 userContent = commonHeader + """
                         토론 타임라인:
@@ -688,6 +850,55 @@ public class AiService {
                 .map(msg -> msg.getId() + "|" + (msg.getBody() == null ? "" : msg.getBody()))
                 .collect(Collectors.joining("#"));
         return hashRaw(raw);
+    }
+
+    private String buildSessionSliceDedupeKey(Long sessionId, Long startMsgId, Long endMsgId) {
+        String raw = "SESSION_SLICE:" + sessionId + ":" + startMsgId + ":" + endMsgId;
+        return hashRaw(raw);
+    }
+
+    private AiJobResponse buildFallbackResponse(ChatRoom room,
+                                                ChatRoomScope scope,
+                                                Long requesterId,
+                                                AiCommandType commandType) {
+        ObjectNode scopeParam = buildRoomScopeNode(room.getId(), scope, 0);
+        ObjectNode options = buildStandardOptions(commandType, AiCommandRequest.builder().build(), 0);
+        options.put("fallback", true);
+
+        LocalDateTime now = LocalDateTime.now();
+        AiJob job = buildJob(room.getId(), requesterId, commandType, "ROOM", scopeParam, options, null, now, null);
+        job.setStatus("COMPLETED");
+        job.setStartedAt(now);
+        job.setEndedAt(now);
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("fallback", true);
+        payload.put("reason", "INSUFFICIENT_CONTEXT");
+        payload.put("message", "대화창에서 충분한 정보를 찾지 못했습니다. 더 오래된 메시지나 추가 설명을 제공해 주세요.");
+        job.setPayload(writeJson(payload));
+        aiJobRepository.save(job);
+        return AiJobResponse.from(job, objectMapper);
+    }
+
+    private List<Integer> resolveContextWindows(AiCommandType commandType, Integer requestedLimit) {
+        if (!commandType.requiresTranscript()) {
+            return List.of(commandType.resolveLimit(requestedLimit));
+        }
+
+        int start = Math.max(commandType.resolveLimit(requestedLimit), ADAPTIVE_MIN_CONTEXT);
+        List<Integer> windows = new ArrayList<>();
+        int current = start;
+        while (true) {
+            windows.add(current);
+            if (current >= ADAPTIVE_MAX_CONTEXT) {
+                break;
+            }
+            int next = Math.min(current * 2, ADAPTIVE_MAX_CONTEXT);
+            if (windows.contains(next)) {
+                break;
+            }
+            current = next;
+        }
+        return windows;
     }
 
     private String hashRaw(String raw) {
