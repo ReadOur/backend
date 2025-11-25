@@ -1,16 +1,15 @@
 package com.readour.common.controller;
 
-import com.readour.common.dto.ApiResponseDto;
-import com.readour.common.dto.DuplicateCheckResponseDto;
-import com.readour.common.dto.FindIdRequestDto;
-import com.readour.common.dto.FindIdResponseDto;
-import com.readour.common.dto.PasswordChangeRequestDto;
-import com.readour.common.dto.PasswordResetRequestDto;
+import com.readour.common.dto.*;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.exception.CustomException;
 import com.readour.common.security.UserPrincipal;
 import com.readour.common.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -32,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/users")
 @RequiredArgsConstructor
 @Tag(name = "사용자", description = "회원 계정 관련 API")
+@SecurityRequirement(name = "bearerAuth")
 public class UserController {
 
     private final UserService userService;
@@ -98,5 +98,43 @@ public class UserController {
                 .message(available ? "사용 가능한 닉네임입니다." : "이미 사용 중인 닉네임입니다.")
                 .build();
         return ResponseEntity.ok(response);
+    }
+
+    @Operation(summary = "내 설정 조회",
+            description = "현재 로그인한 사용자의 설정 정보(프로필, 생년월일, 성별, 선호 도서관)를 조회합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "404", description = "사용자를 찾을 수 없음",
+                    content = @Content(schema = @Schema(implementation = ErrorResponseDto.class)))
+    })
+    @GetMapping
+    public ResponseEntity<ApiResponseDto<UserSettingsResponseDto>> getUserSettings(
+            @AuthenticationPrincipal UserPrincipal currentUser
+    ) {
+        UserSettingsResponseDto settings = userService.getUserSettings(currentUser.getId());
+        return ResponseEntity.ok(ApiResponseDto.<UserSettingsResponseDto>builder()
+                .status(HttpStatus.OK.value())
+                .body(settings)
+                .message("설정 정보 조회 성공")
+                .build());
+    }
+
+    @Operation(summary = "닉네임 변경",
+            description = "사용자의 닉네임을 변경합니다.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "변경 성공"),
+            @ApiResponse(responseCode = "400", description = "유효성 검사 실패"),
+            @ApiResponse(responseCode = "409", description = "이미 사용 중인 닉네임")
+    })
+    @PatchMapping("/nickname")
+    public ResponseEntity<ApiResponseDto<Void>> updateNickname(
+            @AuthenticationPrincipal UserPrincipal currentUser,
+            @Valid @RequestBody NicknameUpdateRequestDto requestDto
+    ) {
+        userService.updateNickname(currentUser.getId(), requestDto);
+        return ResponseEntity.ok(ApiResponseDto.<Void>builder()
+                .status(HttpStatus.OK.value())
+                .message("닉네임이 변경되었습니다.")
+                .build());
     }
 }

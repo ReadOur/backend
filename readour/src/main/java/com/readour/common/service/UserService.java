@@ -1,28 +1,32 @@
 package com.readour.common.service;
 
-import com.readour.common.dto.FindIdRequestDto;
-import com.readour.common.dto.PasswordChangeRequestDto;
-import com.readour.common.dto.PasswordResetRequestDto;
-import com.readour.common.dto.SignupRequestDto;
+import com.readour.common.dto.*;
 import com.readour.common.entity.User;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.enums.UserStatus;
 import com.readour.common.exception.CustomException;
 import com.readour.common.repository.UserRepository;
+import com.readour.community.dto.UserLibraryResponseDto;
+import com.readour.community.repository.UserInterestedLibraryRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class UserService {
 
     private final UserRepository userRepository;
+    private final UserInterestedLibraryRepository userInterestedLibraryRepository;
     private final PasswordEncoder passwordEncoder;
     private final MailService mailService;
 
@@ -112,5 +116,39 @@ public class UserService {
             builder.append(TEMP_PASSWORD_CHAR_POOL.charAt(index));
         }
         return builder.toString();
+    }
+
+    // 사용자 설정 정보 조회 (닉네임, 이메일, 생년월일, 성별, 선호 도서관 목록)
+    @Transactional(readOnly = true)
+    public UserSettingsResponseDto getUserSettings(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+
+        // 선호 도서관 목록 조회
+        List<UserLibraryResponseDto> libraries = userInterestedLibraryRepository.findByUserId(userId)
+                .stream()
+                .map(UserLibraryResponseDto::fromEntity)
+                .collect(Collectors.toList());
+
+        return UserSettingsResponseDto.from(user, libraries);
+    }
+
+    // 닉네임 변경
+    @Transactional
+    public void updateNickname(Long userId, NicknameUpdateRequestDto dto) {
+        // 중복 검사 (본인 닉네임 제외)
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
+
+        if (!user.getNickname().equals(dto.getNickname()) && userRepository.existsByNickname(dto.getNickname())) {
+            throw new CustomException(ErrorCode.CONFLICT, "이미 사용 중인 닉네임입니다.");
+        }
+
+        // 변경
+        user.setNickname(dto.getNickname());
+        user.setUpdatedAt(LocalDateTime.now());
+
+        // (Dirty Checking으로 자동 저장됨)
+        log.info("User nickname updated. userId: {}, newNickname: {}", userId, dto.getNickname());
     }
 }
