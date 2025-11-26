@@ -136,6 +136,14 @@ public enum AiCommandType {
         }
         String normalized = raw.trim().toUpperCase(Locale.ROOT);
 
+        // 1) enum 이름과 일치하면 바로 반환
+        try {
+            return AiCommandType.valueOf(normalized);
+        } catch (IllegalArgumentException ignored) {
+            // fall through to alias matching
+        }
+
+        // 2) 별칭 매칭
         return Arrays.stream(values())
                 .filter(type -> type.aliases.stream()
                         .map(alias -> alias.toUpperCase(Locale.ROOT))
