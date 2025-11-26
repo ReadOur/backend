@@ -5,6 +5,7 @@ import com.readour.common.dto.FileResponseDto;
 import com.readour.common.entity.FileAsset;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.exception.CustomException;
+import com.readour.common.security.UserPrincipal;
 import com.readour.common.service.FileAssetService;
 import com.readour.common.service.FileDownload;
 import io.swagger.v3.oas.annotations.Operation;
@@ -18,6 +19,7 @@ import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -50,8 +52,8 @@ public class FileController {
                     implementation = MultipartFile.class)
             List<MultipartFile> files,
 
-            @RequestHeader(value = "X-User-Id")
-            Long userId,
+            @AuthenticationPrincipal
+            UserPrincipal userPrincipal,
 
             @RequestParam(value = "targetType")
             String targetType,
@@ -59,6 +61,7 @@ public class FileController {
             @RequestParam(value = "targetId")
             Long targetId
     ) {
+        Long userId = requireUserId(userPrincipal);
         List<MultipartFile> uploadTargets = new ArrayList<>();
         if (files != null) {
             files.stream()
@@ -155,5 +158,12 @@ public class FileController {
         } catch (IllegalArgumentException e) {
             throw new CustomException(ErrorCode.INTERNAL_SERVER_ERROR, "지원하지 않는 콘텐츠 타입입니다.");
         }
+    }
+
+    private Long requireUserId(UserPrincipal userPrincipal) {
+        if (userPrincipal == null) {
+            throw new CustomException(ErrorCode.UNAUTHORIZED, "인증 정보가 존재하지 않습니다.");
+        }
+        return userPrincipal.getId();
     }
 }
