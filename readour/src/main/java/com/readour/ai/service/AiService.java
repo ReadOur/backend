@@ -156,6 +156,10 @@ public class AiService {
         AiJobResponse lastExistingResponse = null;
         Instant budgetStart = Instant.now();
         int attempt = 0;
+        int totalAttempts = contextWindows.size();
+        AiJob bestEffortJob = null;
+        JsonNode bestEffortPayload = null;
+        Instant bestEffortStarted = null;
 
         for (int limit : contextWindows) {
             attempt++;
@@ -177,9 +181,13 @@ public class AiService {
 
             ObjectNode scopeParam = buildRoomScopeNode(room.getId(), scope, filteredMessages.size());
             ObjectNode options = buildStandardOptions(commandType, request, filteredMessages.size());
-            String dedupeKey = buildDedupeKey(room.getId(), commandType, filteredMessages);
+            String dedupeKey = shouldUseDedupe(commandType)
+                    ? buildDedupeKey(room.getId(), commandType, filteredMessages)
+                    : null;
 
-            AiJob existingJob = aiJobRepository.findTopByDedupeKey(dedupeKey).orElse(null);
+            AiJob existingJob = (dedupeKey == null)
+                    ? null
+                    : aiJobRepository.findTopByDedupeKey(dedupeKey).orElse(null);
             if (existingJob != null) {
                 if (!"COMPLETED".equals(existingJob.getStatus())) {
                     return AiJobResponse.from(existingJob, objectMapper);
@@ -197,8 +205,18 @@ public class AiService {
 
             try {
                 JsonNode payload = callModelAsJson(promptBundle);
-                completeJob(job, payload, startedInstant);
-                publishAiMessage(room.getId(), requesterId, commandType, payload);
+                if (shouldRetryWithLargerWindow(request, payload, attempt, totalAttempts)) {
+                    if (hasUsablePayload(payload)) {
+                        bestEffortJob = job;
+                        bestEffortPayload = payload;
+                        bestEffortStarted = startedInstant;
+                    }
+                    failJob(job, startedInstant, "INSUFFICIENT_CONTEXT_FOR_NOTE");
+                    continue;
+                }
+                JsonNode sanitized = sanitizePayloadForNote(request, payload);
+                completeJob(job, sanitized, startedInstant);
+                publishAiMessage(room.getId(), requesterId, commandType, sanitized);
                 return AiJobResponse.from(job, objectMapper);
             } catch (CustomException ex) {
                 failJob(job, startedInstant, ex.getMessage());
@@ -212,6 +230,12 @@ public class AiService {
 
         if (lastExistingResponse != null) {
             return lastExistingResponse;
+        }
+        if (bestEffortJob != null && bestEffortPayload != null) {
+            JsonNode sanitized = sanitizePayloadForNote(request, bestEffortPayload);
+            completeJob(bestEffortJob, sanitized, bestEffortStarted != null ? bestEffortStarted : Instant.now());
+            publishAiMessage(room.getId(), requesterId, commandType, sanitized);
+            return AiJobResponse.from(bestEffortJob, objectMapper);
         }
         return buildFallbackResponse(room, scope, requesterId, commandType);
     }
@@ -556,17 +580,21 @@ public class AiService {
             case PUBLIC_SUMMARY -> {
                 systemContent = """
                         너는 독서 커뮤니티 공개 채팅방의 대화를 안전하게 요약하는 전문가 어시스턴트다.
-                        응답은 반드시 한국어 JSON 문자열이어야 하며, 민감한 표현을 제거한다.
-                        정보가 부족하면 더 넓은 대화 로그가 필요하다고 명시하고, 충분하면 즉시 응답한다.
+                        응답은 반드시 한국어 JSON 문자열이어야 하며(마크다운/코드블록 금지), 민감한 표현을 제거한다.
+                        추가 지시사항(note)을 최우선으로 반영해 요약 방향을 정하고, note와 무관한 과도한 추론은 금지한다.
+                        대화 로그에 note가 요구한 정보가 없으면 추론하지 말고, 충분한 로그가 없다고 명시한다.
+                        거짓 사실을 추가하지 말고, 실제 메시지에서 확인된 내용만 사용한다.
                         """;
                 userContent = commonHeader + """
                         최근 메시지 타임라인:
                         %s
 
                         지시사항:
-                        - highlights 배열에는 주요 대화 주제를 시간 순서대로 2~3줄 요약한다.
-                        - keywords 배열에는 핵심 키워드를 3개 적는다.
-                        - JSON 예시 {"highlights":["..."],"keywords":["..."]} 구조를 따른다.
+                        - note가 있다면 note의 질문/요구를 가장 먼저 반영해 요약한다.
+                        - note에서 요구한 내용이 로그에 없으면 추측하지 말고 highlights에 "요청한 내용 찾을 수 없음: <note 요약>" 한 줄을 반드시 넣는다.
+                        - 실제 대화로 확인된 내용만 highlights에 2~3줄(시간 순)로 작성한다. 빈 로그면 빈 배열로 둔다.
+                        - keywords 배열에는 대화에서 확인된 핵심 키워드를 3개 적는다. 없으면 빈 배열.
+                        - 오직 JSON 문자열만 반환한다. 예시 {"highlights":["..."],"keywords":["..."]}.
                         """.formatted(transcript);
             }
             case GROUP_QUESTION_GENERATOR -> {
@@ -858,6 +886,113 @@ public class AiService {
                 .map(msg -> msg.getId() + "|" + (msg.getBody() == null ? "" : msg.getBody()))
                 .collect(Collectors.joining("#"));
         return hashRaw(raw);
+    }
+
+    private boolean shouldUseDedupe(AiCommandType commandType) {
+        // 공개방 요약은 요청자의 note가 달라질 수 있어 캐시하지 않음
+        return commandType != AiCommandType.PUBLIC_SUMMARY;
+    }
+
+    private boolean hasUsablePayload(JsonNode payload) {
+        if (payload == null || payload.isNull()) {
+            return false;
+        }
+        JsonNode highlights = payload.get("highlights");
+        JsonNode keywords = payload.get("keywords");
+        boolean hasHighlights = highlights != null && highlights.isArray() && ((ArrayNode) highlights).size() > 0;
+        boolean hasKeywords = keywords != null && keywords.isArray() && ((ArrayNode) keywords).size() > 0;
+        return hasHighlights || hasKeywords;
+    }
+
+    private JsonNode sanitizePayloadForNote(AiCommandRequest request, JsonNode payload) {
+        String note = request.getNote();
+        if (note == null || note.isBlank()) {
+            return payload;
+        }
+        String marker = "요청한 내용 찾을 수 없음: " + note.trim();
+
+        // null payload -> 빈 구조 반환
+        if (payload == null || payload.isNull()) {
+            ObjectNode sanitized = objectMapper.createObjectNode();
+            ArrayNode highlights = objectMapper.createArrayNode();
+            highlights.add(marker);
+            sanitized.set("highlights", highlights);
+            sanitized.set("keywords", objectMapper.createArrayNode());
+            return sanitized;
+        }
+
+        ObjectNode sanitized = payload.isObject()
+                ? payload.deepCopy()
+                : objectMapper.createObjectNode();
+
+        ArrayNode highlights = objectMapper.createArrayNode();
+        JsonNode originalHighlights = payload.get("highlights");
+        boolean hasNoteMarker = false;
+        if (originalHighlights != null && originalHighlights.isArray()) {
+            for (JsonNode node : originalHighlights) {
+                if (node.isTextual() && node.asText().contains("요청한 내용 찾을 수 없음")) {
+                    hasNoteMarker = true;
+                    break;
+                }
+            }
+        }
+
+        if (hasNoteMarker || originalHighlights == null || !originalHighlights.isArray() || ((ArrayNode) originalHighlights).isEmpty()) {
+            highlights.add(marker);
+        } else {
+            highlights.addAll((ArrayNode) originalHighlights);
+        }
+
+        sanitized.set("highlights", highlights);
+
+        JsonNode originalKeywords = payload.get("keywords");
+        boolean shouldClearKeywords = hasNoteMarker || highlights.size() == 1 && marker.equals(highlights.get(0).asText());
+        if (shouldClearKeywords) {
+            sanitized.set("keywords", objectMapper.createArrayNode());
+        } else {
+            if (originalKeywords != null && originalKeywords.isArray()) {
+                sanitized.set("keywords", originalKeywords);
+            } else {
+                sanitized.set("keywords", objectMapper.createArrayNode());
+            }
+        }
+
+        return sanitized;
+    }
+
+    private boolean shouldRetryWithLargerWindow(AiCommandRequest request,
+                                                JsonNode payload,
+                                                int attemptIndex,
+                                                int totalAttempts) {
+        String note = request.getNote();
+        if (note == null || note.isBlank()) {
+            return false;
+        }
+        if (attemptIndex >= totalAttempts) {
+            return false;
+        }
+        if (payload == null || payload.isNull()) {
+            return true;
+        }
+        if (payload.has("reason") && "INSUFFICIENT_CONTEXT".equalsIgnoreCase(payload.path("reason").asText())) {
+            return true;
+        }
+        JsonNode highlights = payload.get("highlights");
+        if (highlights == null || highlights.isNull()) {
+            return true;
+        }
+        if (highlights.isArray()) {
+            ArrayNode array = (ArrayNode) highlights;
+            if (array.isEmpty()) {
+                return true;
+            }
+            for (JsonNode node : array) {
+                if (node.isTextual() && node.asText().contains("요청한 내용 찾을 수 없음")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private void publishAiMessage(Long roomId,
