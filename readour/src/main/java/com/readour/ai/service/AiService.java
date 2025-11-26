@@ -189,11 +189,15 @@ public class AiService {
                     ? null
                     : aiJobRepository.findTopByDedupeKey(dedupeKey).orElse(null);
             if (existingJob != null) {
-                if (!"COMPLETED".equals(existingJob.getStatus())) {
+                String status = existingJob.getStatus();
+                if ("COMPLETED".equals(status)) {
+                    lastExistingResponse = AiJobResponse.from(existingJob, objectMapper);
+                    continue;
+                }
+                if ("RUNNING".equals(status)) {
                     return AiJobResponse.from(existingJob, objectMapper);
                 }
-                lastExistingResponse = AiJobResponse.from(existingJob, objectMapper);
-                continue;
+                // FAILED 등은 캐시로 사용하지 않고 새로 시도
             }
 
             Instant startedInstant = Instant.now();
@@ -601,6 +605,8 @@ public class AiService {
                 systemContent = """
                         너는 독서 모임 토론을 이어갈 추가 질문을 제안하는 조력자다.
                         기존 논의와 자연스럽게 연결되도록 중복되지 않는 질문을 제시하고, 답변은 JSON 문자열로만 응답한다.
+                        마크다운/코드블록/불릿/번호 리스트/앞뒤 설명 문구 금지. 오직 순수 JSON 텍스트만 반환한다.
+                        큰따옴표는 ASCII \" 로만 사용하고, 스마트 따옴표나 백틱을 사용하지 않는다.
                         정보가 부족하면 더 넓은 대화 로그가 필요하다고 명시하고, 충분하면 즉시 응답한다.
                         """;
                 userContent = commonHeader + """
@@ -726,6 +732,10 @@ public class AiService {
         try {
             return objectMapper.readTree(sanitized);
         } catch (Exception ex) {
+            JsonNode recovered = tryExtractJson(sanitized);
+            if (recovered != null) {
+                return recovered;
+            }
             log.error("LLM 응답 파싱 실패. raw={}", raw);
             throw new CustomException(ErrorCode.INTERNAL_SERVER_ERROR, "AI 응답을 파싱할 수 없습니다.");
         }
@@ -889,8 +899,8 @@ public class AiService {
     }
 
     private boolean shouldUseDedupe(AiCommandType commandType) {
-        // 공개방 요약은 요청자의 note가 달라질 수 있어 캐시하지 않음
-        return commandType != AiCommandType.PUBLIC_SUMMARY;
+        // 개발/테스트 단계에서는 디듀프를 비활성화해 항상 새 작업을 실행
+        return false;
     }
 
     private boolean hasUsablePayload(JsonNode payload) {
@@ -1032,6 +1042,48 @@ public class AiService {
     private String buildSessionSliceDedupeKey(Long sessionId, Long startMsgId, Long endMsgId) {
         String raw = "SESSION_SLICE:" + sessionId + ":" + startMsgId + ":" + endMsgId;
         return hashRaw(raw);
+    }
+
+    private JsonNode tryExtractJson(String text) {
+        if (text == null) {
+            return null;
+        }
+        // 마크다운/불릿/번호/스마트따옴표 등을 최소한으로 정리
+        String normalized = text
+                .replace('“', '"')
+                .replace('”', '"')
+                .replace('‘', '\'')
+                .replace('’', '\'')
+                .replace("```", "")
+                .replace("`", "")
+                .replace("**", "")
+                .replace("\r", "")
+                .replaceAll("(?m)^\\s*[-*]\\s+", "")      // 불릿 제거
+                .replaceAll("(?m)^\\s*\\d+\\.\\s+", "");  // 번호 리스트 제거
+
+        text = normalized;
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            String candidate = text.substring(start, end + 1);
+            try {
+                return objectMapper.readTree(candidate);
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+        // array 형태도 시도
+        start = text.indexOf('[');
+        end = text.lastIndexOf(']');
+        if (start >= 0 && end > start) {
+            String candidate = text.substring(start, end + 1);
+            try {
+                return objectMapper.readTree(candidate);
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+        return null;
     }
 
     private AiJobResponse buildFallbackResponse(ChatRoom room,
