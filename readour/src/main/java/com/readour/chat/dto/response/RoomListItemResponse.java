@@ -22,6 +22,9 @@ public class RoomListItemResponse {
     @Schema(description = "채팅방 이름", example = "프로젝트 A")
     private String name;
 
+    @Schema(description = "채팅방 범위", example = "PRIVATE")
+    private String scope;
+
     @Schema(description = "내 역할", example = "OWNER")
     private Role role;
 

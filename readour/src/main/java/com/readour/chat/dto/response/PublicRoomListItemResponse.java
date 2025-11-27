@@ -24,6 +24,9 @@ public class PublicRoomListItemResponse {
     @Schema(description = "채팅방 소개", example = "누구나 참여 가능한 독서 토론방", nullable = true)
     private String description;
 
+    @Schema(description = "채팅방 범위", example = "PUBLIC")
+    private String scope;
+
     @Schema(description = "현재 참여 인원 수", example = "12")
     private long memberCount;
 
