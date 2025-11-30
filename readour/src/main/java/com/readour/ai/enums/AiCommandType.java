@@ -17,7 +17,7 @@ public enum AiCommandType {
     PUBLIC_SUMMARY(
             "ROOM_RECENT_SUMMARY",
             "CHAT_SUMMARY",
-            Set.of(ChatRoomScope.PUBLIC),
+            Set.of(ChatRoomScope.PUBLIC, ChatRoomScope.GROUP),
             30,
             true,
             Set.of("SUMMARY", "PUBLIC_SUMMARY", "RECENT_SUMMARY", "요약")
