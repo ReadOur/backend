@@ -7,6 +7,7 @@ import com.readour.common.entity.FileAsset;
 import com.readour.common.entity.User;
 import com.readour.common.exception.CustomException;
 import com.readour.common.enums.ErrorCode;
+import com.readour.common.enums.UserRole;
 import com.readour.common.service.FileAssetService;
 import com.readour.community.enums.RecruitmentStatus;
 import com.readour.community.repository.*;
@@ -192,6 +193,10 @@ public class CommunityService {
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "User not found with id: " + userId));
     }
 
+    private boolean isAdmin(User user) {
+        return user.getRole() == UserRole.ADMIN;
+    }
+
     // =============================================
     // --- COMMUNITY SERVICE ---
     // =============================================
@@ -302,7 +307,11 @@ public class CommunityService {
             savedPost = postRepository.save(savedPost);
         }
 
-        fileAssetService.replaceLinks("POST", savedPost.getPostId(), requestDto.getAttachmentIds());
+        if (requestDto.getTempId() != null) {
+            fileAssetService.relinkTempFilesToPost(requestDto.getTempId(), userId, savedPost.getPostId(), requestDto.getAttachmentIds());
+        } else {
+            fileAssetService.replaceLinks("POST", savedPost.getPostId(), requestDto.getAttachmentIds());
+        }
         List<FileResponseDto> attachments = mapToResponses(fileAssetService.getLinkedAssets("POST", savedPost.getPostId()));
 
         return getPostDetail(savedPost.getPostId(), userId);
@@ -457,8 +466,9 @@ public class CommunityService {
     public void deletePost(Long postId, Long userId) {
         Post post = postRepository.findById(postId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Post not found with id: " + postId));
+        User actor = validateAndGetUser(userId);
 
-        if (!post.getUser().getId().equals(userId)) {
+        if (!post.getUser().getId().equals(userId) && !isAdmin(actor)) {
             throw new CustomException(ErrorCode.FORBIDDEN, "User does not have permission to delete this post");
         }
 
@@ -524,8 +534,9 @@ public class CommunityService {
     public void deleteComment(Long commentId, Long userId) {
         Comment comment = commentRepository.findByCommentIdAndIsDeletedFalse(commentId)
                 .orElseThrow(() -> new CustomException(ErrorCode.NOT_FOUND, "Comment not found with id: " + commentId));
+        User actor = validateAndGetUser(userId);
 
-        if (!comment.getUser().getId().equals(userId)) {
+        if (!comment.getUser().getId().equals(userId) && !isAdmin(actor)) {
             throw new CustomException(ErrorCode.FORBIDDEN, "User does not have permission to delete this comment");
         }
 

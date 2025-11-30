@@ -3,6 +3,7 @@ package com.readour.common.service;
 import com.readour.common.dto.*;
 import com.readour.common.entity.User;
 import com.readour.common.enums.ErrorCode;
+import com.readour.common.enums.UserRole;
 import com.readour.common.enums.UserStatus;
 import com.readour.common.exception.CustomException;
 import com.readour.common.repository.UserRepository;
@@ -46,6 +47,7 @@ public class UserService {
                 .gender(dto.getGender())
                 .birthDate(dto.getBirthDate())
                 .status(UserStatus.ACTIVE)
+                .role(UserRole.USER)
                 .createdAt(LocalDateTime.now())
                 .updatedAt(LocalDateTime.now())
                 .build();
