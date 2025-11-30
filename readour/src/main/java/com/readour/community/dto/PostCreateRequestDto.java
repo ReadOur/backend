@@ -19,6 +19,8 @@ public class PostCreateRequestDto {
     private Boolean isSpoiler;
     private List<String> warnings;
     private List<Long> attachmentIds;
+    @Schema(description = "임시 업로드 컨텍스트 ID (임시 업로드 사용 시)", example = "123456789")
+    private Long tempId;
 
     @Schema(description = "모집 인원 (카테고리 GROUP 전용, 2 이상)", example = "4")
     @Min(value = 2, message = "모집 인원은 최소 2명 이상이어야 합니다.")

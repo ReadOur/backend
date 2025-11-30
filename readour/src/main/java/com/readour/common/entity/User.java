@@ -1,6 +1,7 @@
 package com.readour.common.entity;
 
 import com.readour.common.enums.Gender;
+import com.readour.common.enums.UserRole;
 import com.readour.common.enums.UserStatus;
 import jakarta.persistence.*;
 import lombok.*;
@@ -21,6 +22,10 @@ public class User {
     private String nickname;
     @Enumerated(EnumType.STRING)
     private UserStatus status;
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private UserRole role = UserRole.USER;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

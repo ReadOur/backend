@@ -2,6 +2,7 @@ package com.readour.common.controller;
 
 import com.readour.common.dto.ApiResponseDto;
 import com.readour.common.dto.FileResponseDto;
+import com.readour.common.dto.TempFileUploadResponseDto;
 import com.readour.common.entity.FileAsset;
 import com.readour.common.enums.ErrorCode;
 import com.readour.common.exception.CustomException;
@@ -88,6 +89,59 @@ public class FileController {
                 .status(200)
                 .body(body)
                 .message("파일을 업로드했습니다.")
+                .build();
+        return ResponseEntity.ok(response);
+    }
+
+    @PostMapping(value = "/temp", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @Operation(summary = "게시글 작성 중 임시 파일 업로드",
+            description = "tempId를 지정하지 않으면 서버가 생성하며, 게시글 생성 시 tempId와 attachmentIds로 POST에 재매핑합니다.")
+    public ResponseEntity<ApiResponseDto<TempFileUploadResponseDto>> uploadTemp(
+            @RequestPart(value = "file", required = false)
+            @Schema(type = "string", format = "binary", description = "단일 업로드 파일") MultipartFile file,
+
+            @RequestPart(value = "files", required = false)
+            @Schema(description = "다건 업로드 파일 목록", type = "array",
+                    implementation = MultipartFile.class)
+            List<MultipartFile> files,
+
+            @AuthenticationPrincipal
+            UserPrincipal userPrincipal,
+
+            @RequestParam(value = "tempId", required = false)
+            @Schema(description = "임시 업로드 컨텍스트 ID (미지정 시 서버 생성)", example = "123456789") Long tempId
+    ) {
+        Long userId = requireUserId(userPrincipal);
+        List<MultipartFile> uploadTargets = new ArrayList<>();
+        if (files != null) {
+            files.stream()
+                    .filter(Objects::nonNull)
+                    .forEach(uploadTargets::add);
+        }
+        if (file != null) {
+            uploadTargets.add(file);
+        }
+        if (uploadTargets.isEmpty()) {
+            throw new CustomException(ErrorCode.BAD_REQUEST, "업로드할 파일이 없습니다.");
+        }
+
+        Long resolvedTempId = (tempId != null) ? tempId : fileAssetService.generateTempId();
+        List<FileAsset> uploaded = fileAssetService.uploadAll(uploadTargets, userId);
+        uploaded.forEach(asset -> fileAssetService.linkFile(asset.getFileId(), "POST_TEMP", resolvedTempId));
+
+        List<FileResponseDto> bodyFiles = uploaded.stream()
+                .map(fileAssetService::toResponse)
+                .toList();
+
+        TempFileUploadResponseDto body = TempFileUploadResponseDto.builder()
+                .tempId(resolvedTempId)
+                .files(bodyFiles)
+                .build();
+
+        ApiResponseDto<TempFileUploadResponseDto> response = ApiResponseDto.<TempFileUploadResponseDto>builder()
+                .status(200)
+                .body(body)
+                .message("임시 파일을 업로드했습니다.")
                 .build();
         return ResponseEntity.ok(response);
     }

@@ -27,6 +27,7 @@ import java.io.IOException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 
 @Service
@@ -39,6 +40,10 @@ public class FileAssetService {
     private final AwsProperties awsProperties;
     private final FileAssetRepository fileAssetRepository;
     private final FileLinkRepository fileLinkRepository;
+
+    public long generateTempId() {
+        return ThreadLocalRandom.current().nextLong(1, Long.MAX_VALUE);
+    }
 
     @Transactional
     public FileAsset upload(MultipartFile file, Long ownerUserId) {
@@ -114,6 +119,58 @@ public class FileAssetService {
                 .createdAt(LocalDateTime.now())
                 .build();
         fileLinkRepository.save(link);
+    }
+
+    @Transactional
+    public void relinkTempFilesToPost(Long tempId, Long ownerUserId, Long postId, List<Long> fileIds) {
+        if (tempId == null) {
+            throw new CustomException(ErrorCode.BAD_REQUEST, "tempId가 필요합니다.");
+        }
+        if (CollectionUtils.isEmpty(fileIds)) {
+            return;
+        }
+
+        String tempType = normalizeTargetType("POST_TEMP");
+        String postType = normalizeTargetType("POST");
+
+        List<Long> distinct = fileIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (distinct.isEmpty()) {
+            return;
+        }
+
+        List<FileLink> links = fileLinkRepository.findAllByTargetTypeAndTargetIdAndFileIdIn(tempType, tempId, distinct);
+        if (links.size() != distinct.size()) {
+            throw new CustomException(ErrorCode.BAD_REQUEST, "임시 업로드 파일을 찾을 수 없습니다.");
+        }
+
+        Map<Long, FileAsset> assets = fileAssetRepository.findAllByFileIdIn(distinct).stream()
+                .collect(Collectors.toMap(FileAsset::getFileId, asset -> asset));
+        for (Long fileId : distinct) {
+            FileAsset asset = assets.get(fileId);
+            if (asset == null) {
+                throw new CustomException(ErrorCode.NOT_FOUND, "파일을 찾을 수 없습니다.");
+            }
+            if (!Objects.equals(asset.getOwnerUserId(), ownerUserId)) {
+                throw new CustomException(ErrorCode.FORBIDDEN, "본인의 임시 파일만 첨부할 수 있습니다.");
+            }
+        }
+
+        fileLinkRepository.deleteAllByTargetAndFileIds(tempType, tempId, distinct);
+
+        LocalDateTime baseTime = LocalDateTime.now();
+        int index = 0;
+        for (Long fileId : distinct) {
+            FileLink link = FileLink.builder()
+                    .fileId(fileId)
+                    .targetType(postType)
+                    .targetId(postId)
+                    .createdAt(baseTime.plusNanos(index++))
+                    .build();
+            fileLinkRepository.save(link);
+        }
     }
 
     @Transactional
